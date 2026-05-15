@@ -19,6 +19,16 @@ case "$1" in
     cd "$DEV_DIR"
     npm install
 
+    # Install Electron in isolated dir (skip if already present)
+    ELECTRON_DIR="$HOME/.maestro-deck-electron"
+    ELECTRON_BIN="$ELECTRON_DIR/node_modules/electron/dist/electron"
+    if [ ! -f "$ELECTRON_BIN" ]; then
+      echo "Installing Electron..."
+      mkdir -p "$ELECTRON_DIR"
+      [ -f "$ELECTRON_DIR/package.json" ] || echo '{"name":"maestro-deck-electron","private":true}' > "$ELECTRON_DIR/package.json"
+      cd "$ELECTRON_DIR" && npm install electron@^35.0.0 --save && cd "$DEV_DIR"
+    fi
+
     # Symlink binary
     mkdir -p "$BIN_DIR"
     chmod +x "$DEV_DIR/bin/maestro-deck.js"

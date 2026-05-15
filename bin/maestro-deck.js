@@ -2,7 +2,7 @@
 import { readFileSync, existsSync, lstatSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { homedir } from 'os';
 import { createInterface } from 'readline';
 
@@ -78,7 +78,25 @@ async function main() {
   switch (command) {
     case 'start':
     case undefined: {
-      console.log('hello world');
+      // Electron lives in its own isolated dir so node_modules/electron
+      // never shadows the runtime built-in inside electron-main.cjs.
+      const electronDir = join(homedir(), '.maestro-deck-electron');
+      const electronBin = join(electronDir, 'node_modules', 'electron', 'dist', 'electron');
+      if (!existsSync(electronBin)) {
+        console.error(`Error: Electron not found at ${electronBin}. Re-run the installer.`);
+        process.exit(1);
+      }
+      const guiDir = join(__installDir, 'src', 'gui');
+      // Strip ELECTRON_RUN_AS_NODE — when set (e.g. by VS Code/Claude Code),
+      // Electron skips main-process init and runs as plain Node.
+      const env = { ...process.env };
+      delete env.ELECTRON_RUN_AS_NODE;
+      const child = spawn(electronBin, ['--no-sandbox', guiDir], {
+        stdio: 'ignore',
+        detached: true,
+        env,
+      });
+      child.unref();
       break;
     }
 
@@ -123,16 +141,19 @@ async function main() {
     case 'uninstall': {
       const binLink = join(homedir(), '.local', 'bin', 'maestro-deck');
       const installDir = __installDir;
+      const electronDir = join(homedir(), '.maestro-deck-electron');
 
       console.log('This will remove:');
       if (existsSync(binLink)) console.log(`  ${binLink}  (symlink)`);
       console.log(`  ${installDir}/`);
+      if (existsSync(electronDir)) console.log(`  ${electronDir}/`);
 
       const answer = await prompt('\nProceed? [y/N] ');
       if (answer.toLowerCase() !== 'y') { console.log('Aborted.'); break; }
 
       if (existsSync(binLink)) rmSync(binLink, { force: true });
       rmSync(installDir, { recursive: true, force: true });
+      if (existsSync(electronDir)) rmSync(electronDir, { recursive: true, force: true });
 
       console.log('maestro-deck uninstalled.');
       break;

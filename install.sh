@@ -34,11 +34,27 @@ else
   git clone "$REPO_URL" "$INSTALL_DIR"
 fi
 
-# 3. Install dependencies
+# 3. Install app dependencies (none currently, but kept for future use)
 cd "$INSTALL_DIR"
 npm install --omit=dev
 
-# 4. Symlink binary
+# 4. Install Electron in an isolated directory so it doesn't shadow its own runtime module
+ELECTRON_DIR="$HOME/.maestro-deck-electron"
+ELECTRON_BIN="$ELECTRON_DIR/node_modules/electron/dist/electron"
+if [ ! -f "$ELECTRON_BIN" ]; then
+  echo "Installing Electron..."
+  mkdir -p "$ELECTRON_DIR"
+  if [ ! -f "$ELECTRON_DIR/package.json" ]; then
+    echo '{"name":"maestro-deck-electron","private":true}' > "$ELECTRON_DIR/package.json"
+  fi
+  cd "$ELECTRON_DIR"
+  npm install electron@^35.0.0 --save
+  cd "$INSTALL_DIR"
+else
+  echo "Electron already installed, skipping."
+fi
+
+# 5. Symlink binary
 mkdir -p "$BIN_DIR"
 chmod +x "$INSTALL_DIR/bin/maestro-deck.js"
 ln -sf "$INSTALL_DIR/bin/maestro-deck.js" "$BIN_DIR/maestro-deck"

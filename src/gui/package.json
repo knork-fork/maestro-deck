@@ -1,0 +1,6 @@
+{
+  "name": "maestro-deck-gui",
+  "private": true,
+  "type": "module",
+  "main": "electron-main.cjs"
+}
