@@ -25,6 +25,10 @@ Linux systems often require `--no-sandbox` because the `chrome-sandbox` binary n
 - Installs Electron once into `~/.maestro-deck-electron/` — skipped if binary already exists to avoid slow re-runs on update.
 - Re-run install.sh after deleting `~/.maestro-deck-electron/` to upgrade Electron.
 
+## Local storage
+
+All runtime data (e.g. `workspaces.json`) lives in `~/.maestro-deck/resources/`. This subdirectory is gitignored so it doesn't appear in diffs when `dev.sh --local` symlinks `~/.maestro-deck` → repo.
+
 ## dev.sh
 
 - `--local`: symlinks `~/.maestro-deck` → repo, runs `npm install`, installs Electron if missing, symlinks binary.

@@ -7,10 +7,11 @@ import { exec, spawn, spawnSync } from 'child_process';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const CONFIG_DIR = join(homedir(), '.maestro-deck');
-const WORKSPACES_FILE = join(CONFIG_DIR, 'workspaces.json');
+const RESOURCES_DIR = join(CONFIG_DIR, 'resources');
+const WORKSPACES_FILE = join(RESOURCES_DIR, 'workspaces.json');
 
 function ensureConfigDir() {
-  if (!existsSync(CONFIG_DIR)) mkdirSync(CONFIG_DIR, { recursive: true });
+  if (!existsSync(RESOURCES_DIR)) mkdirSync(RESOURCES_DIR, { recursive: true });
 }
 
 function getWorkspaces() {
