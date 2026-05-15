@@ -131,6 +131,21 @@ style.textContent = `
   }
   .md-titlebar-btn:hover { background: #3c3c3c; }
   .md-titlebar-btn.md-close:hover { background: #c42b1c; color: #fff; }
+  #md-sidebar-toggle {
+    width: 38px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #888;
+    -webkit-app-region: no-drag;
+    transition: background 0.1s, color 0.1s;
+  }
+  #md-sidebar-toggle:hover { background: #3c3c3c; color: #fff; }
+  #md-sidebar-toggle.active { color: #ccc; }
 `;
 document.head.appendChild(style);
 
@@ -242,6 +257,25 @@ if (folderPath) {
   pathEl.title = folderPath;
 }
 bar.appendChild(pathEl);
+
+if (isMainArea) {
+  const toggleBtn = document.createElement('button');
+  toggleBtn.id = 'md-sidebar-toggle';
+  toggleBtn.title = 'Toggle Sidebar';
+  toggleBtn.innerHTML = `
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0.75" y="0.75" width="13.5" height="13.5" rx="1.25" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="10.5" y1="0.75" x2="10.5" y2="14.25" stroke="currentColor" stroke-width="1.2"/>
+    </svg>
+  `;
+  toggleBtn.addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('md-toggle-sidebar'));
+  });
+  window.addEventListener('md-sidebar-state', e => {
+    toggleBtn.classList.toggle('active', !!e.detail?.open);
+  });
+  bar.appendChild(toggleBtn);
+}
 
 const controls = document.createElement('div');
 controls.id = 'md-titlebar-controls';

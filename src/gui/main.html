@@ -30,27 +30,6 @@
       position: relative;
     }
 
-    #sidebar-toggle {
-      position: absolute;
-      top: 6px;
-      right: 8px;
-      width: 26px;
-      height: 26px;
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: #444;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 3px;
-      transition: color 0.15s, background 0.15s;
-      z-index: 100;
-      -webkit-app-region: no-drag;
-    }
-    #sidebar-toggle:hover { color: #aaa; background: #1e1e1e; }
-    #sidebar-toggle.active { color: #888; }
-
     #sidebar-divider {
       width: 1px;
       background: #222;
@@ -80,105 +59,15 @@
 <body>
   <div class="main-content">
     <div class="main-area">
-      <button id="sidebar-toggle" title="Toggle Sidebar">
-        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0.75" y="0.75" width="13.5" height="13.5" rx="1.25" stroke="currentColor" stroke-width="1.2"/>
-          <line x1="10.5" y1="0.75" x2="10.5" y2="14.25" stroke="currentColor" stroke-width="1.2"/>
-        </svg>
-      </button>
+      <div id="tile-canvas"></div>
     </div>
     <div id="sidebar-divider"></div>
     <div id="sidebar"></div>
   </div>
   <script src="/titlebar.js"></script>
-  <script>
-    const SIDEBAR_DEFAULT_WIDTH = 280;
-    let sidebarOpen = true;
-    let sidebarWidth = SIDEBAR_DEFAULT_WIDTH;
-
-    const sidebar = document.getElementById('sidebar');
-    const divider = document.getElementById('sidebar-divider');
-    const toggleBtn = document.getElementById('sidebar-toggle');
-
-    async function loadPreferences() {
-      try {
-        const res = await fetch('/api/preferences');
-        if (!res.ok) return null;
-        return await res.json();
-      } catch { return null; }
-    }
-
-    async function savePreferences() {
-      try {
-        await fetch('/api/preferences', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sidebar: { open: sidebarOpen, width: sidebarWidth } }),
-        });
-      } catch { /* ignore */ }
-    }
-
-    function applySidebar(animated = false) {
-      if (!animated) {
-        sidebar.style.transition = 'none';
-        divider.style.transition = 'none';
-      }
-      if (sidebarOpen) {
-        sidebar.style.width = `${sidebarWidth}px`;
-        divider.style.display = '';
-      } else {
-        sidebar.style.width = '0px';
-        divider.style.display = 'none';
-      }
-      toggleBtn.classList.toggle('active', sidebarOpen);
-      if (!animated) {
-        requestAnimationFrame(() => {
-          sidebar.style.transition = '';
-          divider.style.transition = '';
-        });
-      }
-    }
-
-    toggleBtn.addEventListener('click', () => {
-      sidebarOpen = !sidebarOpen;
-      applySidebar(true);
-      savePreferences();
-    });
-
-    // Resize via divider drag
-    divider.addEventListener('mousedown', e => {
-      e.preventDefault();
-      const startX = e.clientX;
-      const startWidth = sidebarWidth;
-      divider.classList.add('dragging');
-      sidebar.style.transition = 'none';
-
-      function onMove(e) {
-        sidebarWidth = Math.max(120, Math.min(900, startWidth + (startX - e.clientX)));
-        sidebar.style.width = `${sidebarWidth}px`;
-      }
-
-      function onUp() {
-        divider.classList.remove('dragging');
-        sidebar.style.transition = '';
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-        savePreferences();
-      }
-
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-
-    (async () => {
-      const prefs = await loadPreferences();
-      if (prefs?.sidebar != null) {
-        sidebarOpen = prefs.sidebar.open ?? true;
-        sidebarWidth = prefs.sidebar.width ?? SIDEBAR_DEFAULT_WIDTH;
-      }
-      // null prefs means missing file → default open
-      applySidebar(false);
-    })();
+  <script type="module">
+    import { init } from '/tiles-framework.js';
+    init({ workspacePath: new URLSearchParams(location.search).get('path') || '' });
   </script>
 </body>
 </html>

@@ -42,3 +42,7 @@ env -u ELECTRON_RUN_AS_NODE \
   --no-sandbox \
   src/gui
 ```
+
+## Tile system
+
+Custom tiles live in `src/tiles/`. See [`src/tiles/CLAUDE.md`](src/tiles/CLAUDE.md) for how to create new tiles.
