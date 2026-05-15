@@ -164,6 +164,11 @@ export async function startServer() {
         openInFileManager(path);
         json({ ok: true });
 
+      } else if (url.pathname === '/api/version' && req.method === 'GET') {
+        const versionFile = join(__dir, '..', '..', 'version.txt');
+        const version = existsSync(versionFile) ? readFileSync(versionFile, 'utf8').trim() : 'unknown';
+        json({ version });
+
       } else if (url.pathname === '/api/releases' && req.method === 'GET') {
         const releases = await fetchReleases();
         json(releases);

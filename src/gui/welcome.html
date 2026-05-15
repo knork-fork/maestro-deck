@@ -54,6 +54,11 @@
       color: #e8e8e8;
       letter-spacing: -0.5px;
     }
+    .app-version {
+      font-size: 11px;
+      color: #555;
+      margin-top: -4px;
+    }
 
     .section { margin-bottom: 32px; }
 
@@ -274,6 +279,7 @@
       <div class="app-header">
         <img class="app-icon" src="/icon.png" alt="">
         <div class="app-name">MaestroDeck</div>
+        <div class="app-version" id="app-version"></div>
       </div>
 
       <div class="section">
@@ -507,6 +513,9 @@
     }
 
     /* ── Init ── */
+    fetch('/api/version').then(r => r.json()).then(({ version }) => {
+      document.getElementById('app-version').textContent = version;
+    }).catch(() => {});
     loadRecents();
     loadChangelog();
   </script>
