@@ -19,3 +19,7 @@ Run `maestro-deck update` to pull the latest version at any time.
 ## Run
 
 Run with `maestro-deck` or launch from app drawer.
+
+## Recommended
+
+Pair with [maestro](https://github.com/knork-fork/maestro) — an AI workflow orchestrator for Claude Code.
