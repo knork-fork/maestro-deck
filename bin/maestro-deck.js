@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, existsSync, lstatSync } from 'fs';
+import { readFileSync, existsSync, lstatSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawnSync } from 'child_process';
@@ -16,7 +16,8 @@ Commands:
   start         Start the maestro-deck GUI (default)
   update        Check for a newer release and update if available
   version       Print the installed version
-  help          Show this help message`;
+  help          Show this help message
+  uninstall     Remove the binary and ~/.maestro-deck/`;
 
 const [,, command] = process.argv;
 
@@ -114,7 +115,26 @@ async function main() {
     }
 
     case 'version': {
+      if (isDevMode()) { console.log('maestro-deck DEV VERSION'); break; }
       console.log(`maestro-deck ${getVersion()}`);
+      break;
+    }
+
+    case 'uninstall': {
+      const binLink = join(homedir(), '.local', 'bin', 'maestro-deck');
+      const installDir = __installDir;
+
+      console.log('This will remove:');
+      if (existsSync(binLink)) console.log(`  ${binLink}  (symlink)`);
+      console.log(`  ${installDir}/`);
+
+      const answer = await prompt('\nProceed? [y/N] ');
+      if (answer.toLowerCase() !== 'y') { console.log('Aborted.'); break; }
+
+      if (existsSync(binLink)) rmSync(binLink, { force: true });
+      rmSync(installDir, { recursive: true, force: true });
+
+      console.log('maestro-deck uninstalled.');
       break;
     }
 
