@@ -98,7 +98,8 @@ async function findPort(start = 7337, tries = 20) {
 }
 
 export async function startServer() {
-  const html = readFileSync(join(__dir, 'welcome.html'), 'utf8');
+  const html     = readFileSync(join(__dir, 'welcome.html'), 'utf8');
+  const mainHtml = readFileSync(join(__dir, 'main.html'), 'utf8');
   const titlebarJs = readFileSync(join(__dir, 'titlebar.js'), 'utf8');
   const iconIcoPath = join(__dir, '..', '..', 'icons', 'favicon.ico');
   const iconPngPath = join(__dir, '..', '..', 'icons', 'icon_full.png');
@@ -118,6 +119,10 @@ export async function startServer() {
       if (url.pathname === '/' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(html);
+
+      } else if (url.pathname === '/main' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(mainHtml);
 
       } else if (url.pathname === '/titlebar.js' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/javascript' });

@@ -1,3 +1,30 @@
+const isMainArea = window.location.pathname === '/main';
+const folderPath = isMainArea
+  ? new URLSearchParams(window.location.search).get('path')
+  : null;
+
+async function doOpenFolder() {
+  try {
+    const res = await fetch('/api/open-folder', { method: 'POST' });
+    if (res.status === 204) return;
+    const { path } = await res.json();
+    if (path) window.electronAPI.openMain(path);
+  } catch (e) { console.error('doOpenFolder', e); }
+}
+
+async function doOpenRecent() {
+  try {
+    const res = await fetch('/api/workspaces');
+    if (!res.ok) return;
+    const ws = await res.json();
+    if (ws.length) window.electronAPI.openMain(ws[0].path);
+  } catch (e) { console.error('doOpenRecent', e); }
+}
+
+function doCloseFolder() {
+  window.electronAPI.closeFolder();
+}
+
 const style = document.createElement('style');
 style.textContent = `
   #md-titlebar {
@@ -66,13 +93,26 @@ style.textContent = `
     white-space: nowrap;
   }
   .md-dd-item:hover { background: #094771; color: #fff; }
+  .md-dd-item.disabled { color: #555; cursor: default; }
+  .md-dd-item.disabled:hover { background: none; color: #555; }
   .md-dd-sep {
     height: 1px;
     background: #3c3c3c;
     margin: 4px 0;
   }
+  #md-titlebar-path {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 12px;
+  }
   #md-titlebar-controls {
-    margin-left: auto;
     display: flex;
     -webkit-app-region: no-drag;
   }
@@ -98,12 +138,12 @@ const MENUS = [
   {
     label: 'File',
     items: [
-      { label: 'Open Folder…' },
-      { label: 'Open Recent' },
+      { label: 'Open Folder…', action: doOpenFolder },
+      { label: 'Open Recent',  action: doOpenRecent },
       { sep: true },
       { label: 'Preferences' },
       { sep: true },
-      { label: 'Close Folder' },
+      { label: 'Close Folder', action: isMainArea ? doCloseFolder : null, disabled: !isMainArea },
       { sep: true },
       { label: 'Exit', action: () => window.electronAPI.close() },
     ],
@@ -159,8 +199,9 @@ function buildMenubar() {
         } else {
           const item = document.createElement('div');
           item.className = 'md-dd-item';
+          if (entry.disabled) item.classList.add('disabled');
           item.textContent = entry.label;
-          if (entry.action) {
+          if (entry.action && !entry.disabled) {
             item.addEventListener('click', e => { e.stopPropagation(); closeAll(); entry.action(); });
           }
           dropdown.appendChild(item);
@@ -193,6 +234,14 @@ icon.innerHTML = `<img src="/icon.png" alt="">`;
 bar.appendChild(icon);
 
 bar.appendChild(buildMenubar());
+
+const pathEl = document.createElement('div');
+pathEl.id = 'md-titlebar-path';
+if (folderPath) {
+  pathEl.textContent = folderPath;
+  pathEl.title = folderPath;
+}
+bar.appendChild(pathEl);
 
 const controls = document.createElement('div');
 controls.id = 'md-titlebar-controls';
