@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches version.txt
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION=$(cat version.txt)
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "Error: tag '$TAG' does not match version.txt ('$VERSION')"
+            exit 1
+          fi
+
+      - name: Verify release notes exist and are non-empty
+        run: |
+          BARE="${GITHUB_REF_NAME#v}"
+          NOTES="release-notes/$BARE.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "Error: $NOTES not found"
+            exit 1
+          fi
+          CONTENT=$(grep -v '^\s*$' "$NOTES" | grep -v '^##' | grep -v '^<!--' || true)
+          if [ -z "$CONTENT" ]; then
+            echo "Error: $NOTES is empty or template-only"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BARE="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file "release-notes/$BARE.md"
