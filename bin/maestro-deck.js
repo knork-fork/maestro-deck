@@ -1,7 +1,10 @@
 #!/usr/bin/env node
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, lstatSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { spawnSync } from 'child_process';
+import { homedir } from 'os';
+import { createInterface } from 'readline';
 
 const __installDir = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -11,6 +14,7 @@ Usage: maestro-deck [command]
 
 Commands:
   start         Start the maestro-deck GUI (default)
+  update        Check for a newer release and update if available
   version       Print the installed version
   help          Show this help message`;
 
@@ -23,12 +27,90 @@ function getVersion() {
   return pkg.version;
 }
 
+function isDevMode() {
+  const installLink = join(homedir(), '.maestro-deck');
+  try { return lstatSync(installLink).isSymbolicLink(); } catch { return false; }
+}
+
+function compareSemver(a, b) {
+  const parse = s => {
+    const clean = s.replace(/^v/, '');
+    const [core, pre] = clean.split('-');
+    return { parts: core.split('.').map(Number), pre: pre ?? null };
+  };
+  const va = parse(a), vb = parse(b);
+  for (let i = 0; i < 3; i++) {
+    const diff = (va.parts[i] ?? 0) - (vb.parts[i] ?? 0);
+    if (diff !== 0) return diff < 0 ? -1 : 1;
+  }
+  if (va.pre !== null && vb.pre === null) return -1;
+  if (va.pre === null && vb.pre !== null) return 1;
+  return 0;
+}
+
+function prompt(question) {
+  return new Promise(resolve => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(question, answer => { rl.close(); resolve(answer.trim()); });
+  });
+}
+
+async function fetchLatestTag() {
+  const headers = { 'User-Agent': 'maestro-deck-cli' };
+
+  const relRes = await fetch('https://api.github.com/repos/knork-fork/maestro-deck/releases/latest', { headers });
+  if (relRes.ok) {
+    const data = await relRes.json();
+    if (data.tag_name) return data.tag_name;
+  }
+
+  const tagRes = await fetch('https://api.github.com/repos/knork-fork/maestro-deck/tags', { headers });
+  if (tagRes.ok) {
+    const tags = await tagRes.json();
+    if (Array.isArray(tags) && tags.length > 0) return tags[0].name;
+  }
+
+  return null;
+}
+
 async function main() {
   switch (command) {
     case 'start':
     case undefined: {
       console.log('hello world');
       break;
+    }
+
+    case 'update': {
+      if (isDevMode()) {
+        console.error('Error: cannot update in dev mode. Run dev.sh --release to switch to the release version, or just git pull.');
+        process.exit(1);
+      }
+      const localVersion = getVersion();
+      let latestTag = null;
+
+      try {
+        latestTag = await fetchLatestTag();
+      } catch {
+        // network failure
+      }
+
+      if (!latestTag) {
+        const answer = await prompt('Warning: Could not check latest version. Proceed with update anyway? [y/N] ');
+        if (answer.toLowerCase() !== 'y') { console.log('Aborted.'); break; }
+      } else {
+        const cmp = compareSemver(localVersion, latestTag);
+        if (cmp >= 0) {
+          console.log(`Already up to date (${localVersion}).`);
+          break;
+        }
+        console.log(`Updating from ${localVersion} → ${latestTag}...`);
+      }
+
+      const tag = latestTag ?? 'main';
+      const installUrl = `https://raw.githubusercontent.com/knork-fork/maestro-deck/${tag}/install.sh`;
+      const result = spawnSync('bash', ['-c', `curl -fsSL ${installUrl} | bash`], { stdio: 'inherit' });
+      process.exit(result.status ?? 0);
     }
 
     case 'version': {
