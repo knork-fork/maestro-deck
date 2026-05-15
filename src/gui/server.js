@@ -9,6 +9,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const CONFIG_DIR = join(homedir(), '.maestro-deck');
 const RESOURCES_DIR = join(CONFIG_DIR, 'resources');
 const WORKSPACES_FILE = join(RESOURCES_DIR, 'workspaces.json');
+const PREFERENCES_FILE = join(RESOURCES_DIR, 'preferences.json');
 
 function ensureConfigDir() {
   if (!existsSync(RESOURCES_DIR)) mkdirSync(RESOURCES_DIR, { recursive: true });
@@ -23,6 +24,17 @@ function getWorkspaces() {
 function saveWorkspaces(ws) {
   ensureConfigDir();
   writeFileSync(WORKSPACES_FILE, JSON.stringify(ws, null, 2));
+}
+
+function getPreferences() {
+  ensureConfigDir();
+  if (!existsSync(PREFERENCES_FILE)) return null;
+  try { return JSON.parse(readFileSync(PREFERENCES_FILE, 'utf8')); } catch { return null; }
+}
+
+function savePreferencesData(prefs) {
+  ensureConfigDir();
+  writeFileSync(PREFERENCES_FILE, JSON.stringify(prefs, null, 2));
 }
 
 function touchWorkspace(path) {
@@ -177,6 +189,17 @@ export async function startServer() {
       } else if (url.pathname === '/api/releases' && req.method === 'GET') {
         const releases = await fetchReleases();
         json(releases);
+
+      } else if (url.pathname === '/api/preferences' && req.method === 'GET') {
+        const prefs = getPreferences();
+        if (prefs === null) { res.writeHead(404); res.end(); return; }
+        json(prefs);
+
+      } else if (url.pathname === '/api/preferences' && req.method === 'POST') {
+        const incoming = JSON.parse(await readBody(req));
+        const existing = getPreferences() ?? {};
+        savePreferencesData({ ...existing, ...incoming });
+        json({ ok: true });
 
       } else {
         res.writeHead(404);

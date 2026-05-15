@@ -33,7 +33,8 @@ function readPreferences() {
 
 function savePreferences(prefs) {
   ensureResourcesDir();
-  writeFileSync(PREFS_FILE, JSON.stringify(prefs, null, 2));
+  const existing = readPreferences();
+  writeFileSync(PREFS_FILE, JSON.stringify({ ...existing, ...prefs }, null, 2));
 }
 
 function debounce(fn, ms) {
