@@ -657,7 +657,7 @@ function buildTileElement(leafNode) {
 
   closeBtn.addEventListener('click', e => {
     e.stopPropagation();
-    closeTile(leafNode.id);
+    confirmCloseTile(leafNode.id);
   });
 
   initTileMoveDrag(titlebar, leafNode.id);
@@ -1086,6 +1086,106 @@ async function loadLayout() {
   } catch (e) { console.error('[tiles] loadLayout error:', e); }
 }
 
+// ═══ Close confirmation ══════════════════════════════════════════════════════
+
+function injectConfirmModalStyles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    #md-confirm-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20000;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #md-confirm-box {
+      background: #1e1e1e;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 20px 24px;
+      min-width: 260px;
+      font-family: ${FONT_STACK};
+      font-size: 13px;
+      color: #ddd;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    }
+    #md-confirm-box p {
+      margin: 0 0 6px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #eee;
+    }
+    #md-confirm-box span {
+      font-size: 12px;
+      color: #888;
+    }
+    #md-confirm-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    #md-confirm-cancel {
+      background: transparent;
+      border: 1px solid #666;
+      border-radius: 4px;
+      color: #ccc;
+      padding: 5px 12px;
+      font-family: ${FONT_STACK};
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #md-confirm-cancel:hover { border-color: #999; color: #eee; }
+    #md-confirm-ok {
+      background: #c0392b;
+      border: 1px solid #a93226;
+      border-radius: 4px;
+      color: #fff;
+      padding: 5px 12px;
+      font-family: ${FONT_STACK};
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #md-confirm-ok:hover { background: #a93226; }
+  `;
+  document.head.appendChild(style);
+}
+
+function confirmCloseTile(id) {
+  const overlay = document.createElement('div');
+  overlay.id = 'md-confirm-overlay';
+
+  const box = document.createElement('div');
+  box.id = 'md-confirm-box';
+  box.innerHTML = `
+    <p>Close tile?</p>
+    <span>This cannot be undone.</span>
+    <div id="md-confirm-buttons">
+      <button id="md-confirm-cancel">Cancel</button>
+      <button id="md-confirm-ok">Close tile</button>
+    </div>
+  `;
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  const cancel = box.querySelector('#md-confirm-cancel');
+  const ok = box.querySelector('#md-confirm-ok');
+
+  function dismiss() { overlay.remove(); }
+
+  cancel.focus();
+  cancel.addEventListener('click', dismiss);
+  ok.addEventListener('click', () => { dismiss(); closeTile(id); });
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) dismiss(); });
+  document.addEventListener('keydown', function onKey(e) {
+    if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', onKey); }
+    else if (e.key === 'Enter') { dismiss(); closeTile(id); document.removeEventListener('keydown', onKey); }
+  });
+}
+
 // ═══ Context menu (Copy / Paste) ════════════════════════════════════════════
 
 function injectContextMenuStyles() {
@@ -1301,5 +1401,6 @@ export async function init(opts) {
   buildSidebar();
   await loadLayout();
   initCanvasSidebarDnD();
+  injectConfirmModalStyles();
   initContextMenu();
 }
