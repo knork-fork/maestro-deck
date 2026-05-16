@@ -122,6 +122,20 @@ function injectStyles() {
       border-radius: 2px;
     }
     .tile-close:hover { color: #ccc; background: rgba(255,255,255,0.08); }
+    .tile-expand {
+      width: 16px;
+      height: 14px;
+      background: none;
+      border: none;
+      color: #555;
+      cursor: pointer;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 2px;
+    }
+    .tile-expand:hover { color: #ccc; background: rgba(255,255,255,0.08); }
 
     .tile-content {
       flex: 1 1 0;
@@ -1153,6 +1167,60 @@ function findTabForLeaf(id) {
   return null;
 }
 
+function getPathToLeaf(node, id) {
+  if (node.type === 'leaf') return node.id === id ? [] : null;
+  const pathA = getPathToLeaf(node.a, id);
+  if (pathA !== null) return [{ splitNode: node, side: 'a' }, ...pathA];
+  const pathB = getPathToLeaf(node.b, id);
+  if (pathB !== null) return [{ splitNode: node, side: 'b' }, ...pathB];
+  return null;
+}
+
+function expandTile(leafId) {
+  const tab = findTabForLeaf(leafId);
+  if (!tab || !tab.layoutTree) return;
+  const tileEl = document.getElementById(`tile-${leafId}`);
+  if (!tileEl) return;
+
+  const path = getPathToLeaf(tab.layoutTree, leafId);
+  if (!path || path.length === 0) return;
+
+  const domSplits = [];
+  let cur = tileEl.closest('.pane');
+  while (cur) {
+    const splitEl = cur.parentElement;
+    if (!splitEl?.classList.contains('split')) break;
+    domSplits.push(splitEl);
+    cur = splitEl.closest('.pane');
+  }
+  domSplits.reverse();
+
+  const splitterPx = 7;
+  for (let i = 0; i < path.length; i++) {
+    const { splitNode, side } = path[i];
+    const splitEl = domSplits[i];
+    if (!splitEl) continue;
+
+    const isH = splitNode.dir === 'h';
+    const rect = splitEl.getBoundingClientRect();
+    const total = isH ? rect.width : rect.height;
+    const usable = total - splitterPx;
+    if (usable <= 0) continue;
+
+    const minTile = isH ? MIN_TILE_W : MIN_TILE_H;
+    const minRatio = minTile / usable;
+    const maxRatio = (usable - minTile) / usable;
+    const newRatio = side === 'a' ? maxRatio : minRatio;
+
+    splitNode.ratio = newRatio;
+    const panes = splitEl.querySelectorAll(':scope > .pane');
+    if (panes[0]) panes[0].style.flex = `${newRatio} 0 0`;
+    if (panes[1]) panes[1].style.flex = `${1 - newRatio} 0 0`;
+  }
+
+  scheduleSaveLayout();
+}
+
 // ═══ Render (diff-by-id to preserve tile DOM) ═══════════════════════════════
 
 function renderTree(tab) {
@@ -1265,11 +1333,17 @@ function buildTileElement(leafNode) {
   const titlebar = document.createElement('div');
   titlebar.className = 'tile-titlebar';
 
+  const expandBtn = document.createElement('button');
+  expandBtn.className = 'tile-expand';
+  expandBtn.title = 'Expand';
+  expandBtn.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1 3 L1 1 L3 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 5 L7 7 L5 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tile-close';
   closeBtn.title = 'Close';
   closeBtn.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
 
+  titlebar.appendChild(expandBtn);
   titlebar.appendChild(closeBtn);
 
   const content = document.createElement('div');
@@ -1279,6 +1353,11 @@ function buildTileElement(leafNode) {
   el.appendChild(content);
 
   el.addEventListener('mousedown', () => focusTile(leafNode.id));
+
+  expandBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    expandTile(leafNode.id);
+  });
 
   closeBtn.addEventListener('click', e => {
     e.stopPropagation();
