@@ -1,4 +1,13 @@
 {
   "name": "maestro-deck",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "node-pty": "^1.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0"
+  }
 }

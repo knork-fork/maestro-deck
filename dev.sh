@@ -29,6 +29,19 @@ case "$1" in
       cd "$ELECTRON_DIR" && npm install electron@^35.0.0 --save && cd "$DEV_DIR"
     fi
 
+    # Rebuild native modules (node-pty) against the isolated Electron's ABI
+    ELECTRON_VERSION="$(node -p "require('$ELECTRON_DIR/node_modules/electron/package.json').version")"
+    echo "Rebuilding native modules for Electron $ELECTRON_VERSION..."
+    cd "$DEV_DIR"
+    npx --yes @electron/rebuild@^3.6.0 -v "$ELECTRON_VERSION" -f -w node-pty
+
+    # Stage vendored xterm.js assets for the terminal tile
+    VENDOR_DIR="$DEV_DIR/src/tiles/terminal/vendor"
+    mkdir -p "$VENDOR_DIR"
+    cp -f "$DEV_DIR/node_modules/@xterm/xterm/lib/xterm.js"        "$VENDOR_DIR/xterm.js"
+    cp -f "$DEV_DIR/node_modules/@xterm/xterm/css/xterm.css"       "$VENDOR_DIR/xterm.css"
+    cp -f "$DEV_DIR/node_modules/@xterm/addon-fit/lib/addon-fit.js" "$VENDOR_DIR/xterm-addon-fit.js"
+
     # Symlink binary
     mkdir -p "$BIN_DIR"
     chmod +x "$DEV_DIR/bin/maestro-deck.js"

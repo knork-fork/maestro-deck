@@ -967,6 +967,7 @@ async function mountTileContent(leafNode, contentEl) {
 
 function buildTileApi(leafId) {
   return {
+    tileId: leafId,
     async getContent() {
       try {
         const res = await fetch(

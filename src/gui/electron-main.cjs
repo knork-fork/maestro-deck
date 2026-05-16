@@ -92,6 +92,11 @@ async function createWindow() {
 
   baseUrl = url;
 
+  // Guarantee PTY/terminal cleanup even if the window-close path is skipped.
+  app.on('before-quit', () => {
+    try { server.close(); } catch {}
+  });
+
   win = new BrowserWindow({
     width: 1200,
     height: 750,

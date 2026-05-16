@@ -24,6 +24,13 @@ if ! command -v git &>/dev/null; then
   fi
   exit 1
 fi
+if ! command -v npx &>/dev/null; then
+  echo "Error: npx is required (ships with npm)."
+  echo "  Most Node.js installs include it. On distros that split node/npm, install npm separately."
+  echo "  Debian/Ubuntu: sudo apt install npm"
+  echo "  Fedora:        sudo dnf install npm"
+  exit 1
+fi
 
 # 2. Clone or update
 if [ -d "$INSTALL_DIR/.git" ]; then
@@ -34,7 +41,7 @@ else
   git clone "$REPO_URL" "$INSTALL_DIR"
 fi
 
-# 3. Install app dependencies (none currently, but kept for future use)
+# 3. Install app dependencies
 cd "$INSTALL_DIR"
 npm install --omit=dev
 
@@ -53,6 +60,19 @@ if [ ! -f "$ELECTRON_BIN" ]; then
 else
   echo "Electron already installed, skipping."
 fi
+
+# 4b. Rebuild native modules (node-pty) against the isolated Electron's ABI
+ELECTRON_VERSION="$(node -p "require('$ELECTRON_DIR/node_modules/electron/package.json').version")"
+echo "Rebuilding native modules for Electron $ELECTRON_VERSION..."
+cd "$INSTALL_DIR"
+npx --yes @electron/rebuild@^3.6.0 -v "$ELECTRON_VERSION" -f -w node-pty
+
+# 4c. Stage vendored xterm.js assets for the terminal tile
+VENDOR_DIR="$INSTALL_DIR/src/tiles/terminal/vendor"
+mkdir -p "$VENDOR_DIR"
+cp -f "$INSTALL_DIR/node_modules/@xterm/xterm/lib/xterm.js"      "$VENDOR_DIR/xterm.js"
+cp -f "$INSTALL_DIR/node_modules/@xterm/xterm/css/xterm.css"     "$VENDOR_DIR/xterm.css"
+cp -f "$INSTALL_DIR/node_modules/@xterm/addon-fit/lib/addon-fit.js" "$VENDOR_DIR/xterm-addon-fit.js"
 
 # 5. Symlink binary
 mkdir -p "$BIN_DIR"

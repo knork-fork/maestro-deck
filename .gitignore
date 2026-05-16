@@ -1,3 +1,5 @@
 node_modules/
 
 resources/
+
+src/tiles/terminal/vendor/

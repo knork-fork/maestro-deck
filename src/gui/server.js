@@ -1,10 +1,12 @@
 import { createServer } from 'http';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync, readlinkSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
-import { homedir } from 'os';
-import { exec } from 'child_process';
+import { homedir, platform } from 'os';
+import { exec, execFileSync } from 'child_process';
 import { createHash } from 'crypto';
+import { WebSocketServer } from 'ws';
+import * as pty from 'node-pty';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const CONFIG_DIR = join(homedir(), '.maestro-deck');
@@ -124,6 +126,163 @@ function loadTiles() {
   return map;
 }
 
+// ───────────────────────────── Terminal (PTY) ─────────────────────────────
+
+const terminals = new Map(); // tileId → { pty, sockets:Set, cwd, cwdTimer }
+
+const IS_WIN = platform() === 'win32';
+const IS_MAC = platform() === 'darwin';
+
+function pickShell() {
+  if (IS_WIN) return process.env.ComSpec || 'powershell.exe';
+  if (process.env.SHELL && existsSync(process.env.SHELL)) return process.env.SHELL;
+  if (existsSync('/bin/bash')) return '/bin/bash';
+  return '/bin/sh';
+}
+
+function getCwd(pid) {
+  try {
+    if (process.platform === 'linux') {
+      return readlinkSync(`/proc/${pid}/cwd`);
+    }
+    if (IS_MAC) {
+      const out = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+        encoding: 'utf8', timeout: 1000, stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const m = out.split('\n').find(l => l.startsWith('n'));
+      if (m) return m.slice(1).trim();
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function killTerminal(id) {
+  const t = terminals.get(id);
+  if (!t) return;
+  terminals.delete(id);
+  if (t.cwdTimer) clearInterval(t.cwdTimer);
+  for (const ws of t.sockets) {
+    try { ws.close(); } catch {}
+  }
+  try { t.pty.kill(); } catch {}
+}
+
+function killAllTerminals() {
+  for (const id of [...terminals.keys()]) killTerminal(id);
+}
+
+function attachTerminalWS(httpServer) {
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url, `http://localhost`);
+    if (url.pathname !== '/ws/terminal') {
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, ws => handleTerminalSocket(ws, url));
+  });
+}
+
+function handleTerminalSocket(ws, url) {
+  const id = url.searchParams.get('id');
+  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    try { ws.close(); } catch {}
+    return;
+  }
+  let entry = terminals.get(id);
+
+  function send(obj) {
+    if (ws.readyState === ws.OPEN) {
+      try { ws.send(JSON.stringify(obj)); } catch {}
+    }
+  }
+
+  ws.on('message', raw => {
+    let msg;
+    try { msg = JSON.parse(raw.toString()); } catch { return; }
+
+    if (msg.type === 'spawn') {
+      if (!entry) {
+        const shell = pickShell();
+        const cols = Math.max(2, msg.cols | 0) || 80;
+        const rows = Math.max(1, msg.rows | 0) || 24;
+        const cwd  = (typeof msg.cwd === 'string' && msg.cwd && existsSync(msg.cwd))
+          ? msg.cwd
+          : homedir();
+        let child;
+        try {
+          child = pty.spawn(shell, [], {
+            name: 'xterm-256color',
+            cols, rows,
+            cwd,
+            env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
+          });
+        } catch (e) {
+          send({ type: 'error', message: `failed to spawn shell: ${e.message}` });
+          try { ws.close(); } catch {}
+          return;
+        }
+
+        entry = { pty: child, sockets: new Set(), cwd, cwdTimer: null };
+        terminals.set(id, entry);
+
+        child.onData(data => {
+          for (const sock of entry.sockets) {
+            if (sock.readyState === sock.OPEN) {
+              try { sock.send(JSON.stringify({ type: 'data', data })); } catch {}
+            }
+          }
+        });
+        child.onExit(({ exitCode }) => {
+          for (const sock of entry.sockets) {
+            if (sock.readyState === sock.OPEN) {
+              try { sock.send(JSON.stringify({ type: 'exit', code: exitCode })); } catch {}
+            }
+          }
+          if (entry.cwdTimer) clearInterval(entry.cwdTimer);
+          terminals.delete(id);
+        });
+
+        // Periodically resolve cwd from the OS and push to attached clients.
+        entry.cwdTimer = setInterval(() => {
+          const next = getCwd(child.pid);
+          if (next && next !== entry.cwd) {
+            entry.cwd = next;
+            for (const sock of entry.sockets) {
+              if (sock.readyState === sock.OPEN) {
+                try { sock.send(JSON.stringify({ type: 'cwd', cwd: next })); } catch {}
+              }
+            }
+          }
+        }, 1500);
+      } else {
+        // Existing PTY — just resize to the joiner's geometry.
+        try { entry.pty.resize(msg.cols | 0 || entry.pty.cols, msg.rows | 0 || entry.pty.rows); } catch {}
+      }
+      entry.sockets.add(ws);
+      if (entry.cwd) send({ type: 'cwd', cwd: entry.cwd });
+      return;
+    }
+
+    if (!entry) return;
+
+    if (msg.type === 'input' && typeof msg.data === 'string') {
+      try { entry.pty.write(msg.data); } catch {}
+    } else if (msg.type === 'resize') {
+      try { entry.pty.resize(Math.max(2, msg.cols | 0), Math.max(1, msg.rows | 0)); } catch {}
+    } else if (msg.type === 'dispose') {
+      killTerminal(id);
+    }
+  });
+
+  ws.on('close', () => {
+    if (entry) entry.sockets.delete(ws);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+
 async function fetchReleases() {
   const res = await fetch('https://api.github.com/repos/knork-fork/maestro-deck/releases', {
     headers: { 'User-Agent': 'maestro-deck-gui' },
@@ -202,7 +361,7 @@ export async function startServer() {
   const port = await findPort();
   const tiles = loadTiles();
 
-  const tileServeRe = /^\/tiles\/([a-z][a-z0-9-]*)\/([a-zA-Z0-9._-]+)$/;
+  const tileServeRe = /^\/tiles\/([a-z][a-z0-9-]*)\/((?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+)$/;
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${port}`);
@@ -349,6 +508,7 @@ export async function startServer() {
         const p = url.searchParams.get('path');
         const id = url.searchParams.get('id');
         if (!p || !id || !/^[a-zA-Z0-9_-]+$/.test(id)) { res.writeHead(400); res.end(); return; }
+        killTerminal(id);
         const f = join(getProjectDir(p), `tile-${id}.json`);
         if (existsSync(f)) unlinkSync(f);
         json({ ok: true });
@@ -362,6 +522,9 @@ export async function startServer() {
       json({ error: e.message }, 500);
     }
   });
+
+  attachTerminalWS(server);
+  server.on('close', killAllTerminals);
 
   const listenUrl = await new Promise((resolve, reject) => {
     server.listen(port, '127.0.0.1', () => resolve(`http://localhost:${port}`));
