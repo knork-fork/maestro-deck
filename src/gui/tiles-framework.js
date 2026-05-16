@@ -224,6 +224,27 @@ function injectStyles() {
     .sb-tile-info { min-width: 0; }
     .sb-tile-label { font-size: 13px; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sb-tile-desc  { font-size: 12px; color: #777; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    #sb-clear-all {
+      flex-shrink: 0;
+      width: calc(100% - 16px);
+      margin: 8px;
+      padding: 8px 12px;
+      background: rgba(180,60,60,0.12);
+      border: 1px solid rgba(180,60,60,0.3);
+      border-radius: 4px;
+      color: #c0504a;
+      font-size: 12px;
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+    }
+    #sb-clear-all:hover { color: #e07070; background: rgba(180,60,60,0.22); border-color: rgba(180,60,60,0.55); }
+    #sb-clear-all svg { flex-shrink: 0; width: 14px; height: 14px; }
   `;
   document.head.appendChild(style);
 }
@@ -354,6 +375,16 @@ function buildSidebar() {
       <div id="sb-imported-tiles"></div>
     </div>
     <div id="sb-panel-skills" class="sb-panel${state.activeTab === 'skills' ? '' : ' hidden'}"></div>
+    <button id="sb-clear-all">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <polyline points="3,4 13,4"/>
+        <path d="M5 4V2h6v2"/>
+        <path d="M4 4l1 10h6l1-10"/>
+        <line x1="6.5" y1="7" x2="6.5" y2="11"/>
+        <line x1="9.5" y1="7" x2="9.5" y2="11"/>
+      </svg>
+      Clear all tiles
+    </button>
   `;
 
   sidebar.querySelectorAll('.sb-tab').forEach(tab => {
@@ -371,6 +402,8 @@ function buildSidebar() {
   document.getElementById('sb-search')?.addEventListener('input', e => {
     renderTileList(e.target.value.trim().toLowerCase());
   });
+
+  document.getElementById('sb-clear-all')?.addEventListener('click', confirmClearAll);
 
   renderTileList('');
 }
@@ -1187,6 +1220,51 @@ function confirmCloseTile(id) {
     if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', onKey); }
     else if (e.key === 'Enter') { dismiss(); closeTile(id); document.removeEventListener('keydown', onKey); }
   });
+}
+
+function confirmClearAll() {
+  const overlay = document.createElement('div');
+  overlay.id = 'md-confirm-overlay';
+
+  const box = document.createElement('div');
+  box.id = 'md-confirm-box';
+  box.innerHTML = `
+    <p>Clear all tiles?</p>
+    <span>All tiles will be closed and their saved content deleted. This cannot be undone.</span>
+    <div id="md-confirm-buttons">
+      <button id="md-confirm-cancel">Cancel</button>
+      <button id="md-confirm-ok">Clear all</button>
+    </div>
+  `;
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  const cancel = box.querySelector('#md-confirm-cancel');
+  const ok     = box.querySelector('#md-confirm-ok');
+  function dismiss() { overlay.remove(); }
+
+  cancel.focus();
+  cancel.addEventListener('click', dismiss);
+  ok.addEventListener('click', () => { dismiss(); clearAll(); });
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) dismiss(); });
+  document.addEventListener('keydown', function onKey(e) {
+    if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', onKey); }
+    else if (e.key === 'Enter') { dismiss(); clearAll(); document.removeEventListener('keydown', onKey); }
+  });
+}
+
+async function clearAll() {
+  state.layoutTree = null;
+  state.focusedId  = null;
+  renderTree();
+  scheduleSaveLayout();
+  try {
+    await fetch(
+      `/api/workspace-tiles?path=${encodeURIComponent(state.workspacePath)}`,
+      { method: 'DELETE' }
+    );
+  } catch { /* ignore */ }
 }
 
 // ═══ Context menu (Copy / Paste) ════════════════════════════════════════════

@@ -488,6 +488,18 @@ export async function startServer() {
         writeFileSync(join(getProjectDir(p), 'layout.json'), JSON.stringify(body, null, 2));
         json({ ok: true });
 
+      } else if (url.pathname === '/api/workspace-tiles' && req.method === 'DELETE') {
+        const p = url.searchParams.get('path');
+        if (!p) { json({ error: 'path required' }, 400); return; }
+        const dir = getProjectDir(p);
+        const files = readdirSync(dir).filter(f => /^tile-[a-zA-Z0-9_-]+\.json$/.test(f));
+        for (const f of files) {
+          const id = f.replace(/^tile-/, '').replace(/\.json$/, '');
+          killTerminal(id);
+          unlinkSync(join(dir, f));
+        }
+        json({ ok: true, deleted: files.length });
+
       } else if (url.pathname === '/api/tile-content' && req.method === 'GET') {
         const p = url.searchParams.get('path');
         const id = url.searchParams.get('id');
