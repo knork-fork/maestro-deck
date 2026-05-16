@@ -183,8 +183,24 @@ export async function mount(container, api) {
     setTimeout(() => term.focus(), 0);
   });
 
+  // The tile framework toggles `.focused` on the .tile element when the tile
+  // is dropped/clicked. Mirror that into xterm's hidden textarea so the user
+  // can start typing immediately after drop without an extra click.
+  const tileEl = container.closest('.tile');
+  let focusObs = null;
+  if (tileEl) {
+    focusObs = new MutationObserver(() => {
+      if (tileEl.classList.contains('focused')) term.focus();
+    });
+    focusObs.observe(tileEl, { attributes: true, attributeFilter: ['class'] });
+    if (tileEl.classList.contains('focused')) {
+      requestAnimationFrame(() => term.focus());
+    }
+  }
+
   return () => {
     disposed = true;
+    try { focusObs?.disconnect(); } catch {}
     try { resizeObs.disconnect(); } catch {}
     try {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'dispose' }));
