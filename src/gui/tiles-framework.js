@@ -598,7 +598,7 @@ function buildSidebar() {
       <button class="sb-tab${state.activeTab === 'plugins' ? ' active' : ''}" data-tab="plugins">Plugins</button>
     </div>
     <div id="sb-search-wrap">
-      <input id="sb-search" type="search" placeholder="Search tiles…" autocomplete="off" spellcheck="false">
+      <input id="sb-search" type="search" placeholder="Search ${state.activeTab === 'plugins' ? 'plugins' : 'tiles'}…" autocomplete="off" spellcheck="false">
     </div>
     <div id="sb-panel-tiles" class="sb-panel${state.activeTab === 'tiles' ? '' : ' hidden'}">
       <div class="sb-section-label" id="sb-label-app">Tiles</div>
@@ -627,14 +627,22 @@ function buildSidebar() {
       state.activeTab = tabName;
       document.getElementById('sb-panel-tiles')?.classList.toggle('hidden', tabName !== 'tiles');
       document.getElementById('sb-panel-plugins')?.classList.toggle('hidden', tabName !== 'plugins');
-      if (tabName === 'plugins') renderPluginList('');
-      else if (tabName === 'tiles') renderTileList(document.getElementById('sb-search')?.value.trim().toLowerCase() || '');
+      const searchEl = document.getElementById('sb-search');
+      if (tabName === 'plugins') {
+        if (searchEl) { searchEl.value = ''; searchEl.placeholder = 'Search plugins…'; }
+        renderPluginList('');
+      } else if (tabName === 'tiles') {
+        if (searchEl) { searchEl.value = ''; searchEl.placeholder = 'Search tiles…'; }
+        renderTileList('');
+      }
       persistSidebarPrefs();
     });
   });
 
   document.getElementById('sb-search')?.addEventListener('input', e => {
-    renderTileList(e.target.value.trim().toLowerCase());
+    const filter = e.target.value.trim().toLowerCase();
+    if (state.activeTab === 'plugins') renderPluginList(filter);
+    else renderTileList(filter);
   });
 
   document.getElementById('sb-clear-all')?.addEventListener('click', confirmClearAll);
