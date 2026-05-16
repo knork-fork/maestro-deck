@@ -756,6 +756,8 @@ function pickDropTarget(clientX, clientY) {
   if (!elAtPoint) return null;
   const tileEl = elAtPoint.closest('.tile');
   if (!tileEl || !canvas.contains(tileEl)) return null;
+  // Reject inner tiles that live inside a .tile-content (they belong to a nested engine)
+  if (tileEl.closest('.tile-content')) return null;
   const leafId = tileEl.id.replace(/^tile-/, '');
   const rect = tileEl.getBoundingClientRect();
   const relX = (clientX - rect.left) / rect.width;
