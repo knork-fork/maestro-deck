@@ -1,5 +1,5 @@
 import { createServer } from 'http';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync, readlinkSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync, readlinkSync, rmSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir, platform } from 'os';
@@ -563,6 +563,29 @@ export async function startServer() {
           unlinkSync(join(dir, f));
         }
         json({ ok: true, deleted: files.length });
+
+      } else if (url.pathname === '/api/project' && req.method === 'DELETE') {
+        const p = url.searchParams.get('path');
+        if (!p) { json({ error: 'path required' }, 400); return; }
+        const dir = getProjectDir(p);
+        if (existsSync(dir)) {
+          // Kill all terminals for tiles in this project
+          for (const f of readdirSync(dir)) {
+            const m = f.match(/^tile-([a-zA-Z0-9_-]+)\.json$/);
+            if (m) killTerminal(m[1]);
+          }
+          rmSync(dir, { recursive: true, force: true });
+        }
+        json({ ok: true });
+
+      } else if (url.pathname === '/api/all-projects' && req.method === 'DELETE') {
+        killAllTerminals();
+        if (existsSync(PROJECTS_DIR)) {
+          for (const entry of readdirSync(PROJECTS_DIR)) {
+            rmSync(join(PROJECTS_DIR, entry), { recursive: true, force: true });
+          }
+        }
+        json({ ok: true });
 
       } else if (url.pathname === '/api/tile-content' && req.method === 'GET') {
         const p = url.searchParams.get('path');

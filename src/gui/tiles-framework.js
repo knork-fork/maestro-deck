@@ -1870,35 +1870,12 @@ function confirmCloseTile(id) {
 }
 
 function confirmClearAll() {
-  const overlay = document.createElement('div');
-  overlay.id = 'md-confirm-overlay';
-
-  const box = document.createElement('div');
-  box.id = 'md-confirm-box';
-  box.innerHTML = `
-    <p>Clear all tiles?</p>
-    <span>All tiles on this tab will be closed and their saved content deleted. This cannot be undone.</span>
-    <div id="md-confirm-buttons">
-      <button id="md-confirm-cancel">Cancel</button>
-      <button id="md-confirm-ok">Clear all</button>
-    </div>
-  `;
-
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-
-  const cancel = box.querySelector('#md-confirm-cancel');
-  const ok     = box.querySelector('#md-confirm-ok');
-  function dismiss() { overlay.remove(); }
-
-  cancel.focus();
-  cancel.addEventListener('click', dismiss);
-  ok.addEventListener('click', () => { dismiss(); clearAll(); });
-  overlay.addEventListener('mousedown', e => { if (e.target === overlay) dismiss(); });
-  document.addEventListener('keydown', function onKey(e) {
-    if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', onKey); }
-    else if (e.key === 'Enter') { dismiss(); clearAll(); document.removeEventListener('keydown', onKey); }
-  });
+  showConfirm(
+    'Clear all tiles?',
+    'All tiles on this tab will be closed and their saved content deleted. This cannot be undone.',
+    'Clear all',
+    clearAll
+  );
 }
 
 async function clearAll() {
@@ -1913,6 +1890,86 @@ async function clearAll() {
       { method: 'DELETE' }
     );
   } catch { /* ignore */ }
+}
+
+function confirmClearProject() {
+  showConfirm(
+    'Clear current project?',
+    'All tabs and their tile content for this workspace will be permanently deleted.',
+    'Clear project',
+    clearProject
+  );
+}
+
+async function clearProject() {
+  // Unmount all leaves across all tabs
+  for (const tab of state.tabs) {
+    for (const info of tab.leaves.values()) {
+      try { info.cleanup?.(); } catch {}
+      clearTimeout(info._saveTimer);
+    }
+    tab.leaves.clear();
+    tab.canvasEl.remove();
+  }
+  state.focusedId = null;
+
+  // Reset to a single empty tab
+  const canvasEl = createTabCanvas();
+  canvasEl.classList.remove('hidden');
+  state.tabs = [{ id: generateId(), label: 'Tab 1', color: TAB_COLORS[0], layoutTree: null, canvasEl, leaves: new Map() }];
+  state.activeTabIndex = 0;
+  initCanvasDnD(state.tabs[0]);
+  buildTabsList();
+
+  try {
+    await fetch(
+      `/api/project?path=${encodeURIComponent(state.workspacePath)}`,
+      { method: 'DELETE' }
+    );
+  } catch { /* ignore */ }
+  scheduleSaveLayout();
+}
+
+function confirmClearAllProjects() {
+  showConfirm(
+    'Clear all projects?',
+    'All workspace layouts and tile content across every project will be permanently deleted.',
+    'Clear all projects',
+    clearAllProjects
+  );
+}
+
+async function clearAllProjects() {
+  await clearProject();
+  try {
+    await fetch('/api/all-projects', { method: 'DELETE' });
+  } catch { /* ignore */ }
+}
+
+function showConfirm(title, body, okLabel, onOk) {
+  const overlay = document.createElement('div');
+  overlay.id = 'md-confirm-overlay';
+  const box = document.createElement('div');
+  box.id = 'md-confirm-box';
+  box.innerHTML = `
+    <p>${escapeHtml(title)}</p>
+    <span>${escapeHtml(body)}</span>
+    <div id="md-confirm-buttons">
+      <button id="md-confirm-cancel">Cancel</button>
+      <button id="md-confirm-ok">${escapeHtml(okLabel)}</button>
+    </div>
+  `;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  function dismiss() { overlay.remove(); }
+  box.querySelector('#md-confirm-cancel').focus();
+  box.querySelector('#md-confirm-cancel').addEventListener('click', dismiss);
+  box.querySelector('#md-confirm-ok').addEventListener('click', () => { dismiss(); onOk(); });
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) dismiss(); });
+  document.addEventListener('keydown', function onKey(e) {
+    if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', onKey); }
+  });
 }
 
 // ═══ Context menu (Copy / Paste) ══════════════════════════════════════════════
@@ -2158,4 +2215,6 @@ export async function init(opts) {
   initGlobalListeners();
   initContextMenu();
   window.addEventListener('md-open-preferences', openPreferencesModalWithState);
+  window.addEventListener('md-clear-project', confirmClearProject);
+  window.addEventListener('md-clear-all-projects', confirmClearAllProjects);
 }
