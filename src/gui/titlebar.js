@@ -25,6 +25,10 @@ function doCloseFolder() {
   window.electronAPI.closeFolder();
 }
 
+function doOpenPreferences() {
+  window.dispatchEvent(new CustomEvent('md-open-preferences'));
+}
+
 const style = document.createElement('style');
 style.textContent = `
   #md-titlebar {
@@ -156,7 +160,7 @@ const MENUS = [
       { label: 'Open Folder…', action: doOpenFolder },
       { label: 'Open Recent',  action: doOpenRecent },
       { sep: true },
-      { label: 'Preferences' },
+      { label: 'Preferences', action: doOpenPreferences },
       { sep: true },
       { label: 'Close Folder', action: isMainArea ? doCloseFolder : null, disabled: !isMainArea },
       { sep: true },
