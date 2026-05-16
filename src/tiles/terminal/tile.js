@@ -183,6 +183,31 @@ export async function mount(container, api) {
     setTimeout(() => term.focus(), 0);
   });
 
+  // Integrate with the framework's context menu. The framework dispatches
+  // these custom events on `.tile-content` when the user right-clicks; the
+  // terminal overrides the defaults so Copy uses xterm's own selection and
+  // Paste writes directly into the PTY.
+  container.addEventListener('md-get-selection', e => {
+    // Terminal output is never editable, so Cut/Delete stay disabled even
+    // when text is selected.
+    e.detail.editable = false;
+    const sel = term.getSelection();
+    if (sel) {
+      e.detail.text = sel;
+      e.detail.onCopied = () => term.clearSelection();
+    }
+  });
+  container.addEventListener('md-paste', e => {
+    const text = e.detail?.text;
+    if (text && connected) ws.send(JSON.stringify({ type: 'input', data: text }));
+    e.preventDefault();
+    term.focus();
+  });
+  container.addEventListener('md-select-all', e => {
+    term.selectAll();
+    e.preventDefault();
+  });
+
   // The tile framework toggles `.focused` on the .tile element when the tile
   // is dropped/clicked. Mirror that into xterm's hidden textarea so the user
   // can start typing immediately after drop without an extra click.

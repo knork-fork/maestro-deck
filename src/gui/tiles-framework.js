@@ -1086,6 +1086,211 @@ async function loadLayout() {
   } catch (e) { console.error('[tiles] loadLayout error:', e); }
 }
 
+// ═══ Context menu (Copy / Paste) ════════════════════════════════════════════
+
+function injectContextMenuStyles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    #md-ctx-menu {
+      position: fixed;
+      z-index: 10000;
+      min-width: 140px;
+      background: #2a2a2a;
+      border: 1px solid #3a3a3a;
+      border-radius: 4px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+      padding: 4px 0;
+      font-family: ${FONT_STACK};
+      font-size: 13px;
+      color: #ddd;
+      user-select: none;
+    }
+    #md-ctx-menu .md-ctx-item {
+      padding: 6px 14px;
+      cursor: default;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    #md-ctx-menu .md-ctx-item:hover:not(.disabled) { background: #3a6ea5; color: #fff; }
+    #md-ctx-menu .md-ctx-item.disabled { color: #666; cursor: default; }
+    #md-ctx-menu .md-ctx-shortcut { color: #888; }
+    #md-ctx-menu .md-ctx-item:hover:not(.disabled) .md-ctx-shortcut { color: #cfd6e0; }
+    #md-ctx-menu .md-ctx-sep { height: 1px; background: #3a3a3a; margin: 4px 0; }
+  `;
+  document.head.appendChild(style);
+}
+
+function closeContextMenu() {
+  document.getElementById('md-ctx-menu')?.remove();
+}
+
+function tileContentEl(tileEl) {
+  return tileEl?.querySelector('.tile-content') ?? null;
+}
+
+function focusedEditable() {
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT') && !ae.disabled && !ae.readOnly) return ae;
+  return null;
+}
+
+function getContextSelection(tileEl) {
+  const content = tileContentEl(tileEl);
+  if (content) {
+    const ev = new CustomEvent('md-get-selection', {
+      detail: { text: null, editable: false, onCopied: null },
+    });
+    content.dispatchEvent(ev);
+    if (ev.detail.text != null || ev.detail.editable) return ev.detail;
+  }
+  // Defaults: native textarea/input selection, then window selection
+  const ae = focusedEditable();
+  if (ae) {
+    const s = ae.selectionStart, e = ae.selectionEnd;
+    const text = (s != null && e != null && e > s) ? ae.value.slice(s, e) : null;
+    return { text, editable: true, onCopied: null, _input: ae };
+  }
+  const winSel = window.getSelection?.().toString();
+  return { text: winSel || null, editable: false, onCopied: null };
+}
+
+function applyContextPaste(tileEl, text) {
+  if (!text) return;
+  const content = tileContentEl(tileEl);
+  if (content) {
+    const ev = new CustomEvent('md-paste', { detail: { text }, cancelable: true });
+    content.dispatchEvent(ev);
+    if (ev.defaultPrevented) return;
+  }
+  const ae = focusedEditable();
+  if (ae) {
+    const s = ae.selectionStart ?? ae.value.length;
+    const e = ae.selectionEnd ?? ae.value.length;
+    ae.setRangeText(text, s, e, 'end');
+    ae.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
+function applyContextDelete(tileEl, sel) {
+  const content = tileContentEl(tileEl);
+  if (content) {
+    const ev = new CustomEvent('md-delete', { cancelable: true });
+    content.dispatchEvent(ev);
+    if (ev.defaultPrevented) return;
+  }
+  const ae = sel?._input ?? focusedEditable();
+  if (ae) {
+    const s = ae.selectionStart, e = ae.selectionEnd;
+    if (s != null && e != null && e > s) {
+      ae.setRangeText('', s, e, 'start');
+      ae.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+}
+
+function applyContextSelectAll(tileEl) {
+  const content = tileContentEl(tileEl);
+  if (content) {
+    const ev = new CustomEvent('md-select-all', { cancelable: true });
+    content.dispatchEvent(ev);
+    if (ev.defaultPrevented) return;
+  }
+  const ae = focusedEditable();
+  if (ae) {
+    ae.select();
+    return;
+  }
+  if (content) {
+    const range = document.createRange();
+    range.selectNodeContents(content);
+    const winSel = window.getSelection();
+    winSel.removeAllRanges();
+    winSel.addRange(range);
+  }
+}
+
+async function showContextMenu(x, y, tileEl) {
+  closeContextMenu();
+  const sel = getContextSelection(tileEl);
+  let clipboardText = '';
+  try { clipboardText = await navigator.clipboard.readText(); } catch { /* permission denied */ }
+
+  const hasSel    = !!sel.text;
+  const editable  = !!sel.editable;
+  const canCut    = hasSel && editable;
+  const canCopy   = hasSel;
+  const canPaste  = !!clipboardText;
+  const canDelete = hasSel && editable;
+  // Select All is always offered — tiles or default DOM handles the rest.
+
+  const menu = document.createElement('div');
+  menu.id = 'md-ctx-menu';
+  menu.innerHTML = `
+    <div class="md-ctx-item${canCut    ? '' : ' disabled'}" data-act="cut">
+      <span>Cut</span><span class="md-ctx-shortcut">Ctrl+X</span>
+    </div>
+    <div class="md-ctx-item${canCopy   ? '' : ' disabled'}" data-act="copy">
+      <span>Copy</span><span class="md-ctx-shortcut">Ctrl+C</span>
+    </div>
+    <div class="md-ctx-item${canPaste  ? '' : ' disabled'}" data-act="paste">
+      <span>Paste</span><span class="md-ctx-shortcut">Ctrl+V</span>
+    </div>
+    <div class="md-ctx-item${canDelete ? '' : ' disabled'}" data-act="delete">
+      <span>Delete</span><span class="md-ctx-shortcut">Del</span>
+    </div>
+    <div class="md-ctx-sep"></div>
+    <div class="md-ctx-item" data-act="select-all">
+      <span>Select All</span><span class="md-ctx-shortcut">Ctrl+A</span>
+    </div>
+  `;
+  document.body.appendChild(menu);
+
+  const r = menu.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  menu.style.left = `${Math.min(x, vw - r.width - 4)}px`;
+  menu.style.top  = `${Math.min(y, vh - r.height - 4)}px`;
+
+  menu.addEventListener('mousedown', e => e.stopPropagation());
+  menu.addEventListener('click', async e => {
+    const item = e.target.closest('.md-ctx-item');
+    if (!item || item.classList.contains('disabled')) return;
+    const act = item.dataset.act;
+    closeContextMenu();
+    if (act === 'copy' && sel.text) {
+      try { await navigator.clipboard.writeText(sel.text); } catch {}
+      sel.onCopied?.();
+    } else if (act === 'cut' && sel.text) {
+      try { await navigator.clipboard.writeText(sel.text); } catch {}
+      applyContextDelete(tileEl, sel);
+    } else if (act === 'paste' && clipboardText) {
+      applyContextPaste(tileEl, clipboardText);
+    } else if (act === 'delete' && sel.text) {
+      applyContextDelete(tileEl, sel);
+    } else if (act === 'select-all') {
+      applyContextSelectAll(tileEl);
+    }
+  });
+}
+
+function initContextMenu() {
+  injectContextMenuStyles();
+  document.addEventListener('contextmenu', e => {
+    // Only show our menu for clicks inside the tile canvas (tiles + their content).
+    const tileEl = e.target instanceof Element ? e.target.closest('.tile') : null;
+    if (!tileEl) return;
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY, tileEl);
+  });
+  document.addEventListener('mousedown', e => {
+    if (!(e.target instanceof Element) || !e.target.closest('#md-ctx-menu')) closeContextMenu();
+  }, true);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeContextMenu();
+  });
+  window.addEventListener('blur', closeContextMenu);
+}
+
 // ═══ Entry point ════════════════════════════════════════════════════════════
 
 export async function init(opts) {
@@ -1096,4 +1301,5 @@ export async function init(opts) {
   buildSidebar();
   await loadLayout();
   initCanvasSidebarDnD();
+  initContextMenu();
 }
