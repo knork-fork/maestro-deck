@@ -1941,6 +1941,8 @@ function confirmClearAllProjects() {
 
 async function clearAllProjects() {
   await clearProject();
+  clearTimeout(state.saveLayoutTimer);
+  state.saveLayoutTimer = null;
   try {
     await fetch('/api/all-projects', { method: 'DELETE' });
   } catch { /* ignore */ }
