@@ -401,6 +401,7 @@ export async function startServer() {
   const mainHtml        = readFileSync(join(__dir, 'main.html'), 'utf8');
   const titlebarJs      = readFileSync(join(__dir, 'titlebar.js'), 'utf8');
   const tilesFrameworkJs = readFileSync(join(__dir, 'tiles-framework.js'), 'utf8');
+  const preferencesModalJs = readFileSync(join(__dir, 'preferences-modal.js'), 'utf8');
   const iconIcoPath = join(__dir, '..', '..', 'icons', 'favicon.ico');
   const iconPngPath = join(__dir, '..', '..', 'icons', 'icon_full.png');
   const iconIco = existsSync(iconIcoPath) ? readFileSync(iconIcoPath) : null;
@@ -435,6 +436,10 @@ export async function startServer() {
       } else if (url.pathname === '/tiles-framework.js' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/javascript' });
         res.end(tilesFrameworkJs);
+
+      } else if (url.pathname === '/preferences-modal.js' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/javascript' });
+        res.end(preferencesModalJs);
 
       } else if (url.pathname === '/favicon.ico' && req.method === 'GET') {
         if (iconIco) {

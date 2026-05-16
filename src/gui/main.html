@@ -29,37 +29,14 @@
       min-width: 0;
       position: relative;
     }
-
-    #sidebar-divider {
-      width: 1px;
-      background: #222;
-      flex-shrink: 0;
-      cursor: col-resize;
-      position: relative;
-      transition: background 0.15s;
-    }
-    #sidebar-divider:hover,
-    #sidebar-divider.dragging { background: #3a3a3a; }
-    #sidebar-divider::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -4px;
-      right: -4px;
-      bottom: 0;
-    }
-
-    #sidebar {
-      background: #000;
-      flex-shrink: 0;
-      overflow: hidden;
-    }
   </style>
 </head>
 <body>
   <div class="main-content">
+    <div id="tabs-sidebar"></div>
+    <div id="tabs-sidebar-divider"></div>
     <div class="main-area">
-      <div id="tile-canvas"></div>
+      <div id="canvas-container"></div>
     </div>
     <div id="sidebar-divider"></div>
     <div id="sidebar"></div>

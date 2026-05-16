@@ -517,5 +517,9 @@
     loadRecents();
     loadChangelog();
   </script>
+  <script type="module">
+    import { openPreferencesModal } from '/preferences-modal.js';
+    window.addEventListener('md-open-preferences', () => openPreferencesModal());
+  </script>
 </body>
 </html>

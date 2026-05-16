@@ -1,22 +1,31 @@
-// Tile canvas framework — i3-style BSP tiling layout.
+// Tile canvas framework — i3-style BSP tiling layout with first-class tabs.
+
+import { openPreferencesModal } from '/preferences-modal.js';
 
 const SIDEBAR_DEFAULT_WIDTH = 280;
+const TABS_SIDEBAR_DEFAULT_WIDTH = 200;
 const MIN_TILE_W = 150;
 const MIN_TILE_H = 100;
 const FONT_STACK = `-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, Ubuntu, sans-serif`;
+const TAB_COLORS = ['#6b7280','#3b82f6','#22c55e','#eab308','#f97316','#ef4444','#a855f7'];
 
 const state = {
   workspacePath: '',
   tiles: [],                          // tile definitions from /api/tiles
   plugins: [],                        // plugin definitions from /api/plugins
-  layoutTree: null,                   // Node | null
-  leaves: new Map(),                  // id → { el, contentEl, cleanup, _saveTimer, tileType, notifyState }
+  hiddenTiles: new Set(),
+  // First-class tabs
+  tabs: [],                           // TabState[]
+  activeTabIndex: 0,
   focusedId: null,
   saveLayoutTimer: null,
+  // Right sidebar
   sidebarOpen: true,
   sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   activeTab: 'tiles',
-  hiddenTiles: new Set(),
+  // Left sidebar (tabs list)
+  tabsSidebarOpen: false,
+  tabsSidebarWidth: TABS_SIDEBAR_DEFAULT_WIDTH,
 };
 
 // ═══ Styles ═════════════════════════════════════════════════════════════════
@@ -24,8 +33,15 @@ const state = {
 function injectStyles() {
   const style = document.createElement('style');
   style.textContent = `
-    /* ── Canvas ── */
-    #tile-canvas {
+    /* ── Canvas container ── */
+    #canvas-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Per-tab canvas ── */
+    .tab-canvas {
       position: absolute;
       inset: 0;
       display: flex;
@@ -33,6 +49,7 @@ function injectStyles() {
       padding: 6px;
       font-family: ${FONT_STACK};
     }
+    .tab-canvas.hidden { display: none; }
 
     /* ── Splits & panes ── */
     .split { display: flex; flex: 1 1 0; min-width: 0; min-height: 0; }
@@ -68,7 +85,6 @@ function injectStyles() {
       background: #1a1a1a;
       overflow: hidden;
     }
-    /* Focus/notify indicator — painted on top of content via overlay */
     .tile::after {
       content: '';
       position: absolute;
@@ -124,7 +140,7 @@ function injectStyles() {
     }
 
     /* ── Drop preview ── */
-    #tile-drop-preview {
+    .tile-drop-preview {
       position: absolute;
       pointer-events: none;
       border: 2px dashed #4fc1ff;
@@ -133,12 +149,12 @@ function injectStyles() {
       z-index: 1000;
       box-sizing: border-box;
     }
-    #tile-drop-preview.swap {
+    .tile-drop-preview.swap {
       border-style: solid;
       background: rgba(79,193,255,0.14);
     }
 
-    /* ── Sidebar ── */
+    /* ── Right sidebar ── */
     #sidebar {
       display: flex;
       flex-direction: column;
@@ -146,6 +162,22 @@ function injectStyles() {
       overflow: hidden;
       background: #000;
       font-family: ${FONT_STACK};
+      flex-shrink: 0;
+    }
+    #sidebar-divider {
+      width: 1px;
+      background: #222;
+      flex-shrink: 0;
+      cursor: col-resize;
+      position: relative;
+      transition: background 0.15s;
+    }
+    #sidebar-divider:hover,
+    #sidebar-divider.dragging { background: #3a3a3a; }
+    #sidebar-divider::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -4px; right: -4px; bottom: 0;
     }
 
     #sb-tabs {
@@ -247,6 +279,200 @@ function injectStyles() {
     }
     #sb-clear-all:hover { color: #e07070; background: rgba(180,60,60,0.22); border-color: rgba(180,60,60,0.55); }
     #sb-clear-all svg { flex-shrink: 0; width: 14px; height: 14px; }
+
+    /* ── Left sidebar (tabs list) ── */
+    #tabs-sidebar {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: ${FONT_STACK};
+      flex-shrink: 0;
+      width: 0px;
+      transition: width 0.15s;
+    }
+    #tabs-sidebar-divider {
+      width: 1px;
+      background: #222;
+      flex-shrink: 0;
+      cursor: col-resize;
+      position: relative;
+      transition: background 0.15s;
+      display: none;
+    }
+    #tabs-sidebar-divider:hover,
+    #tabs-sidebar-divider.dragging { background: #3a3a3a; }
+    #tabs-sidebar-divider::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -4px; right: -4px; bottom: 0;
+    }
+
+    #tl-list {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+      padding: 4px 0;
+    }
+
+    .tl-tab-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      cursor: pointer;
+      border-radius: 3px;
+      margin: 1px 4px;
+      user-select: none;
+    }
+    .tl-tab-item:hover { background: #181818; }
+    .tl-tab-item.active { background: #1e1e1e; }
+
+    .tl-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .tl-tab-label {
+      flex: 1;
+      font-size: 13px;
+      color: #ddd;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .tl-tab-actions {
+      display: flex;
+      gap: 2px;
+      flex-shrink: 0;
+      visibility: hidden;
+    }
+    .tl-tab-item:hover .tl-tab-actions { visibility: visible; }
+
+    .tl-action-btn {
+      width: 18px;
+      height: 18px;
+      background: none;
+      border: none;
+      color: #666;
+      cursor: pointer;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 2px;
+    }
+    .tl-action-btn:hover { color: #ccc; background: rgba(255,255,255,0.08); }
+
+    .tl-create-btn {
+      margin: 6px 8px;
+      padding: 7px 10px;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #888;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.12s, color 0.12s;
+      flex-shrink: 0;
+    }
+    .tl-create-btn:hover { border-color: #555; color: #ccc; }
+
+    /* ── Tab edit modal ── */
+    #md-tab-edit-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20000;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #md-tab-edit-box {
+      background: #1e1e1e;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 20px 24px;
+      min-width: 280px;
+      font-family: ${FONT_STACK};
+      font-size: 13px;
+      color: #ddd;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    }
+    #md-tab-edit-box label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #888;
+      margin-bottom: 6px;
+    }
+    #md-tab-edit-name {
+      width: 100%;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 3px;
+      padding: 6px 9px;
+      color: #ddd;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      box-sizing: border-box;
+      margin-bottom: 14px;
+    }
+    #md-tab-edit-name:focus { border-color: #4fc1ff; }
+    .tl-color-swatches {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .tl-color-swatch {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.1s, transform 0.1s;
+      flex-shrink: 0;
+    }
+    .tl-color-swatch:hover { transform: scale(1.15); }
+    .tl-color-swatch.selected { border-color: #fff; }
+    #md-tab-edit-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .md-btn-cancel {
+      background: transparent;
+      border: 1px solid #666;
+      border-radius: 4px;
+      color: #ccc;
+      padding: 5px 12px;
+      font-family: ${FONT_STACK};
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .md-btn-cancel:hover { border-color: #999; color: #eee; }
+    .md-btn-ok {
+      background: #3a6ea5;
+      border: 1px solid #2d5a8e;
+      border-radius: 4px;
+      color: #fff;
+      padding: 5px 12px;
+      font-family: ${FONT_STACK};
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .md-btn-ok:hover { background: #2d5a8e; }
   `;
   document.head.appendChild(style);
 }
@@ -264,7 +490,7 @@ function generateId() {
   return Math.random().toString(36).slice(2, 18);
 }
 
-// ═══ Sidebar (toggle, divider, prefs) ═══════════════════════════════════════
+// ═══ Preferences ════════════════════════════════════════════════════════════
 
 async function loadPreferences() {
   try {
@@ -283,6 +509,8 @@ async function savePreferences(patch) {
     });
   } catch { /* ignore */ }
 }
+
+// ═══ Right sidebar ══════════════════════════════════════════════════════════
 
 function persistSidebarPrefs() {
   savePreferences({
@@ -316,8 +544,7 @@ function applySidebar(animated = false) {
   }
 }
 
-async function initSidebar() {
-  const prefs = await loadPreferences();
+function initSidebar(prefs) {
   if (prefs?.sidebar != null) {
     state.sidebarOpen  = prefs.sidebar.open ?? true;
     state.sidebarWidth = prefs.sidebar.width ?? SIDEBAR_DEFAULT_WIDTH;
@@ -359,7 +586,7 @@ async function initSidebar() {
   });
 }
 
-// ═══ Sidebar tile list ══════════════════════════════════════════════════════
+// ═══ Right sidebar tile list ════════════════════════════════════════════════
 
 function buildSidebar() {
   const sidebar = document.getElementById('sidebar');
@@ -461,7 +688,7 @@ function renderPluginList(filter) {
 
   if (filtered.length === 0) {
     const empty = document.createElement('div');
-    empty.style.cssText = 'padding: 12px 16px; color: var(--sb-muted, #888); font-size: 12px;';
+    empty.style.cssText = 'padding: 12px 16px; color: #888; font-size: 12px;';
     empty.textContent = filter ? 'No plugins match.' : 'No plugins installed.';
     panel.appendChild(empty);
     return;
@@ -526,7 +753,302 @@ function buildTileListItem(tile) {
   return el;
 }
 
-// ═══ Tile definitions ═══════════════════════════════════════════════════════
+// ═══ Left sidebar (tabs list) ════════════════════════════════════════════════
+
+function persistTabsSidebarPrefs() {
+  savePreferences({ tabsSidebar: { open: state.tabsSidebarOpen, width: state.tabsSidebarWidth } });
+}
+
+function applyTabsSidebar(animated = false) {
+  const sidebar = document.getElementById('tabs-sidebar');
+  const divider = document.getElementById('tabs-sidebar-divider');
+  if (!sidebar || !divider) return;
+
+  if (!animated) {
+    sidebar.style.transition = 'none';
+  }
+  if (state.tabsSidebarOpen) {
+    sidebar.style.width = `${state.tabsSidebarWidth}px`;
+    divider.style.display = 'block';
+  } else {
+    sidebar.style.width = '0px';
+    divider.style.display = 'none';
+  }
+  window.dispatchEvent(new CustomEvent('md-tabs-sidebar-state', { detail: { open: state.tabsSidebarOpen } }));
+  if (!animated) {
+    requestAnimationFrame(() => {
+      sidebar.style.transition = '';
+    });
+  }
+}
+
+function initTabsSidebar(prefs) {
+  if (prefs?.tabsSidebar != null) {
+    state.tabsSidebarOpen  = prefs.tabsSidebar.open ?? false;
+    state.tabsSidebarWidth = prefs.tabsSidebar.width ?? TABS_SIDEBAR_DEFAULT_WIDTH;
+  }
+  applyTabsSidebar(false);
+
+  window.addEventListener('md-toggle-tabs-sidebar', () => {
+    state.tabsSidebarOpen = !state.tabsSidebarOpen;
+    applyTabsSidebar(true);
+    persistTabsSidebarPrefs();
+  });
+
+  const divider = document.getElementById('tabs-sidebar-divider');
+  const sidebar = document.getElementById('tabs-sidebar');
+
+  divider?.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = state.tabsSidebarWidth;
+    divider.classList.add('dragging');
+    sidebar.style.transition = 'none';
+
+    function onMove(e) {
+      state.tabsSidebarWidth = Math.max(120, Math.min(500, startWidth + (e.clientX - startX)));
+      sidebar.style.width = `${state.tabsSidebarWidth}px`;
+    }
+    function onUp() {
+      divider.classList.remove('dragging');
+      sidebar.style.transition = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      persistTabsSidebarPrefs();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+function buildTabsList() {
+  const sidebar = document.getElementById('tabs-sidebar');
+  if (!sidebar) return;
+
+  sidebar.innerHTML = '';
+
+  const list = document.createElement('div');
+  list.id = 'tl-list';
+
+  for (let i = 0; i < state.tabs.length; i++) {
+    const tab = state.tabs[i];
+    const item = document.createElement('div');
+    item.className = 'tl-tab-item' + (i === state.activeTabIndex ? ' active' : '');
+
+    const dot = document.createElement('div');
+    dot.className = 'tl-dot';
+    dot.style.background = tab.color;
+
+    const label = document.createElement('span');
+    label.className = 'tl-tab-label';
+    label.textContent = tab.label;
+
+    const actions = document.createElement('div');
+    actions.className = 'tl-tab-actions';
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'tl-action-btn';
+    editBtn.title = 'Edit tab';
+    editBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
+    editBtn.addEventListener('click', e => { e.stopPropagation(); openTabEditModal(i); });
+
+    actions.appendChild(editBtn);
+
+    if (state.tabs.length > 1) {
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'tl-action-btn';
+      deleteBtn.title = 'Delete tab';
+      deleteBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+      deleteBtn.addEventListener('click', e => { e.stopPropagation(); confirmDeleteTab(i); });
+      actions.appendChild(deleteBtn);
+    }
+
+    item.appendChild(dot);
+    item.appendChild(label);
+    item.appendChild(actions);
+
+    item.addEventListener('click', () => switchToTab(i));
+    list.appendChild(item);
+  }
+
+  const createBtn = document.createElement('button');
+  createBtn.className = 'tl-create-btn';
+  createBtn.textContent = '+ Create Tab';
+  createBtn.addEventListener('click', createTab);
+
+  sidebar.appendChild(list);
+  sidebar.appendChild(createBtn);
+}
+
+// ═══ Tab management ══════════════════════════════════════════════════════════
+
+function createTabCanvas() {
+  const el = document.createElement('div');
+  el.className = 'tab-canvas hidden';
+  document.getElementById('canvas-container').appendChild(el);
+  return el;
+}
+
+function activeTab() {
+  return state.tabs[state.activeTabIndex];
+}
+
+function switchToTab(index) {
+  for (const tab of state.tabs) tab.canvasEl.classList.add('hidden');
+  state.activeTabIndex = index;
+  state.tabs[index].canvasEl.classList.remove('hidden');
+  buildTabsList();
+  scheduleSaveLayout();
+}
+
+function createTab() {
+  const n = state.tabs.length + 1;
+  const canvasEl = createTabCanvas();
+  const tab = {
+    id: generateId(),
+    label: `Tab ${n}`,
+    color: TAB_COLORS[0],
+    layoutTree: null,
+    canvasEl,
+    leaves: new Map(),
+  };
+  state.tabs.push(tab);
+  initCanvasDnD(tab);
+  switchToTab(state.tabs.length - 1);
+  scheduleSaveLayout();
+}
+
+async function deleteTab(index) {
+  const tab = state.tabs[index];
+
+  const leafIds = new Set();
+  if (tab.layoutTree) collectLeafIds(tab.layoutTree, leafIds);
+
+  for (const id of leafIds) {
+    const info = tab.leaves.get(id);
+    if (info) {
+      try { info.cleanup?.(); } catch {}
+      clearTimeout(info._saveTimer);
+    }
+  }
+  tab.leaves.clear();
+  tab.canvasEl.remove();
+
+  for (const id of leafIds) {
+    try {
+      await fetch(
+        `/api/tile-content?path=${encodeURIComponent(state.workspacePath)}&id=${id}`,
+        { method: 'DELETE' }
+      );
+    } catch {}
+  }
+
+  state.tabs.splice(index, 1);
+
+  if (state.tabs.length === 0) {
+    createTab();
+    return;
+  }
+
+  state.activeTabIndex = Math.min(state.activeTabIndex, state.tabs.length - 1);
+  switchToTab(state.activeTabIndex);
+  scheduleSaveLayout();
+}
+
+function openTabEditModal(index) {
+  const tab = state.tabs[index];
+  let selectedColor = tab.color;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'md-tab-edit-overlay';
+
+  const box = document.createElement('div');
+  box.id = 'md-tab-edit-box';
+
+  const swatchesHtml = TAB_COLORS.map(c =>
+    `<div class="tl-color-swatch${c === selectedColor ? ' selected' : ''}" data-color="${c}" style="background:${c}" title="${c}"></div>`
+  ).join('');
+
+  box.innerHTML = `
+    <label>Tab name</label>
+    <input id="md-tab-edit-name" type="text" value="${escapeHtml(tab.label)}" maxlength="40" autocomplete="off">
+    <label>Color</label>
+    <div class="tl-color-swatches">${swatchesHtml}</div>
+    <div id="md-tab-edit-buttons">
+      <button class="md-btn-cancel" id="md-tab-edit-cancel">Cancel</button>
+      <button class="md-btn-ok" id="md-tab-edit-save">Save</button>
+    </div>
+  `;
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  const nameInput = box.querySelector('#md-tab-edit-name');
+  nameInput.focus();
+  nameInput.select();
+
+  box.querySelectorAll('.tl-color-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      box.querySelectorAll('.tl-color-swatch').forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+      selectedColor = sw.dataset.color;
+    });
+  });
+
+  function dismiss() { overlay.remove(); }
+
+  function save() {
+    const newLabel = nameInput.value.trim() || tab.label;
+    tab.label = newLabel;
+    tab.color = selectedColor;
+    dismiss();
+    buildTabsList();
+    scheduleSaveLayout();
+  }
+
+  box.querySelector('#md-tab-edit-cancel').addEventListener('click', dismiss);
+  box.querySelector('#md-tab-edit-save').addEventListener('click', save);
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) dismiss(); });
+  nameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') dismiss();
+  });
+}
+
+function confirmDeleteTab(index) {
+  const tab = state.tabs[index];
+  const overlay = document.createElement('div');
+  overlay.id = 'md-confirm-overlay';
+
+  const box = document.createElement('div');
+  box.id = 'md-confirm-box';
+  box.innerHTML = `
+    <p>Delete tab?</p>
+    <span>Delete "${escapeHtml(tab.label)}"? All tile content on this tab will be removed. This cannot be undone.</span>
+    <div id="md-confirm-buttons">
+      <button id="md-confirm-cancel">Cancel</button>
+      <button id="md-confirm-ok">Delete tab</button>
+    </div>
+  `;
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  const cancel = box.querySelector('#md-confirm-cancel');
+  const ok = box.querySelector('#md-confirm-ok');
+
+  function dismiss() { overlay.remove(); }
+
+  cancel.focus();
+  cancel.addEventListener('click', dismiss);
+  ok.addEventListener('click', () => { dismiss(); deleteTab(index); });
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) dismiss(); });
+  document.addEventListener('keydown', function onKey(e) {
+    if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', onKey); }
+  });
+}
+
+// ═══ Tile definitions ════════════════════════════════════════════════════════
 
 async function loadTileDefinitions() {
   try {
@@ -545,7 +1067,7 @@ async function loadTileDefinitions() {
   }
 }
 
-// ═══ Tree operations ════════════════════════════════════════════════════════
+// ═══ Tree operations (per-tab) ═══════════════════════════════════════════════
 
 function findLeafAndParent(node, id, parent = null, side = null) {
   if (!node) return null;
@@ -555,20 +1077,20 @@ function findLeafAndParent(node, id, parent = null, side = null) {
   return findLeafAndParent(node.a, id, node, 'a') || findLeafAndParent(node.b, id, node, 'b');
 }
 
-function replaceNode(parent, side, newNode) {
+function replaceNode(tab, parent, side, newNode) {
   if (parent == null) {
-    state.layoutTree = newNode;
+    tab.layoutTree = newNode;
   } else {
     parent[side] = newNode;
   }
 }
 
-function insertTile(targetId, edge, newLeaf) {
-  if (!state.layoutTree) {
-    state.layoutTree = newLeaf;
+function insertTile(tab, targetId, edge, newLeaf) {
+  if (!tab.layoutTree) {
+    tab.layoutTree = newLeaf;
     return;
   }
-  const found = findLeafAndParent(state.layoutTree, targetId);
+  const found = findLeafAndParent(tab.layoutTree, targetId);
   if (!found) return;
   const { leaf, parent, side } = found;
 
@@ -581,23 +1103,21 @@ function insertTile(targetId, edge, newLeaf) {
     a: newOnA ? newLeaf : leaf,
     b: newOnA ? leaf    : newLeaf,
   };
-  replaceNode(parent, side, splitNode);
+  replaceNode(tab, parent, side, splitNode);
 }
 
-function removeLeaf(id) {
-  const found = findLeafAndParent(state.layoutTree, id);
+function removeLeaf(tab, id) {
+  const found = findLeafAndParent(tab.layoutTree, id);
   if (!found) return;
   const { parent, side } = found;
   if (parent == null) {
-    state.layoutTree = null;
+    tab.layoutTree = null;
     return;
   }
-  // Sibling takes parent's place
   const sibling = side === 'a' ? parent.b : parent.a;
-  const grand = findParentOf(state.layoutTree, parent);
+  const grand = findParentOf(tab.layoutTree, parent);
   if (grand == null || grand.parent == null) {
-    // parent was root (either no grandparent at all, or grandparent search returned the root itself)
-    state.layoutTree = sibling;
+    tab.layoutTree = sibling;
   } else {
     grand.parent[grand.side] = sibling;
   }
@@ -609,56 +1129,56 @@ function findParentOf(node, target, parent = null, side = null) {
   return findParentOf(node.a, target, node, 'a') || findParentOf(node.b, target, node, 'b');
 }
 
-function swapLeaves(idA, idB) {
+function swapLeaves(tab, idA, idB) {
   if (idA === idB) return;
-  const fa = findLeafAndParent(state.layoutTree, idA);
-  const fb = findLeafAndParent(state.layoutTree, idB);
+  const fa = findLeafAndParent(tab.layoutTree, idA);
+  const fb = findLeafAndParent(tab.layoutTree, idB);
   if (!fa || !fb) return;
-  // Swap by reattaching the leaf nodes at each other's positions
-  replaceNode(fa.parent, fa.side, fb.leaf);
-  replaceNode(fb.parent, fb.side, fa.leaf);
+  replaceNode(tab, fa.parent, fa.side, fb.leaf);
+  replaceNode(tab, fb.parent, fb.side, fa.leaf);
+}
+
+function findTabForLeaf(id) {
+  for (const tab of state.tabs) {
+    if (tab.leaves.has(id)) return tab;
+  }
+  return null;
 }
 
 // ═══ Render (diff-by-id to preserve tile DOM) ═══════════════════════════════
 
-function renderTree() {
-  const canvas = document.getElementById('tile-canvas');
+function renderTree(tab) {
+  const canvas = tab.canvasEl;
   if (!canvas) return;
 
-  // Track which leaf ids appear in the new tree so we can clean up dropped ones
   const newLeafIds = new Set();
-  if (state.layoutTree) collectLeafIds(state.layoutTree, newLeafIds);
+  if (tab.layoutTree) collectLeafIds(tab.layoutTree, newLeafIds);
 
-  // Detach existing tile elements from their current parents so we can re-mount them
-  for (const [id, info] of state.leaves) {
+  for (const [id, info] of tab.leaves) {
     if (newLeafIds.has(id) && info.el && info.el.parentNode) {
       info.el.parentNode.removeChild(info.el);
     }
   }
 
-  // Clear canvas (preview lives inside canvas - re-create as needed later)
   canvas.innerHTML = '';
 
-  // Build fresh DOM, reusing cached tile elements
-  if (state.layoutTree) {
-    canvas.appendChild(renderNode(state.layoutTree));
+  if (tab.layoutTree) {
+    canvas.appendChild(renderNode(tab, tab.layoutTree));
   }
 
-  // Drop leaves that are no longer in the tree (run cleanup, free entry)
-  for (const id of [...state.leaves.keys()]) {
+  for (const id of [...tab.leaves.keys()]) {
     if (!newLeafIds.has(id)) {
-      const info = state.leaves.get(id);
+      const info = tab.leaves.get(id);
       if (typeof info.cleanup === 'function') {
         try { info.cleanup(); } catch (e) { console.error('[tiles] cleanup error:', e); }
       }
       clearTimeout(info._saveTimer);
-      state.leaves.delete(id);
+      tab.leaves.delete(id);
     }
   }
 
-  // Re-apply focus class (the .tile element may have been re-rendered fresh if newly mounted)
-  if (state.focusedId && state.leaves.has(state.focusedId)) {
-    state.leaves.get(state.focusedId).el?.classList.add('focused');
+  if (state.focusedId && tab.leaves.has(state.focusedId)) {
+    tab.leaves.get(state.focusedId).el?.classList.add('focused');
   }
 }
 
@@ -671,8 +1191,8 @@ function collectLeafIds(node, set) {
   collectLeafIds(node.b, set);
 }
 
-function renderNode(node) {
-  if (node.type === 'leaf') return renderLeaf(node);
+function renderNode(tab, node) {
+  if (node.type === 'leaf') return renderLeaf(tab, node);
 
   const splitEl = document.createElement('div');
   splitEl.className = 'split';
@@ -681,7 +1201,7 @@ function renderNode(node) {
   const paneA = document.createElement('div');
   paneA.className = 'pane';
   paneA.style.flex = `${node.ratio} 0 0`;
-  paneA.appendChild(renderNode(node.a));
+  paneA.appendChild(renderNode(tab, node.a));
 
   const splitter = document.createElement('div');
   splitter.className = 'splitter';
@@ -690,7 +1210,7 @@ function renderNode(node) {
   const paneB = document.createElement('div');
   paneB.className = 'pane';
   paneB.style.flex = `${1 - node.ratio} 0 0`;
-  paneB.appendChild(renderNode(node.b));
+  paneB.appendChild(renderNode(tab, node.b));
 
   splitEl.appendChild(paneA);
   splitEl.appendChild(splitter);
@@ -698,19 +1218,17 @@ function renderNode(node) {
   return splitEl;
 }
 
-function renderLeaf(leafNode) {
-  const cached = state.leaves.get(leafNode.id);
+function renderLeaf(tab, leafNode) {
+  const cached = tab.leaves.get(leafNode.id);
   if (cached?.el) {
-    // Sync class state for notify
     cached.el.classList.toggle('notify',       leafNode.notifyState === 'notify');
     cached.el.classList.toggle('stale-notify', leafNode.notifyState === 'stale-notify');
     cached.notifyState = leafNode.notifyState;
     return cached.el;
   }
-  // Fresh mount
   const el = buildTileElement(leafNode);
   const contentEl = el.querySelector('.tile-content');
-  state.leaves.set(leafNode.id, {
+  tab.leaves.set(leafNode.id, {
     el,
     contentEl,
     cleanup: null,
@@ -718,11 +1236,11 @@ function renderLeaf(leafNode) {
     tileType: leafNode.tileType,
     notifyState: leafNode.notifyState,
   });
-  mountTileContent(leafNode, contentEl).catch(e => console.error('[tiles] mount error:', e));
+  mountTileContent(tab, leafNode, contentEl).catch(e => console.error('[tiles] mount error:', e));
   return el;
 }
 
-// ═══ Tile element ═══════════════════════════════════════════════════════════
+// ═══ Tile element ════════════════════════════════════════════════════════════
 
 function buildTileElement(leafNode) {
   const def = state.tiles.find(t => t.name === leafNode.tileType);
@@ -742,7 +1260,7 @@ function buildTileElement(leafNode) {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tile-close';
   closeBtn.title = 'Close';
-  closeBtn.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" fill="none" xmlns="http://www.w3.org/2000/svg"><line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  closeBtn.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
 
   titlebar.appendChild(closeBtn);
 
@@ -764,25 +1282,25 @@ function buildTileElement(leafNode) {
   return el;
 }
 
-// ═══ Focus ══════════════════════════════════════════════════════════════════
+// ═══ Focus ═══════════════════════════════════════════════════════════════════
 
 function focusTile(id) {
   if (state.focusedId === id) return;
   if (state.focusedId) {
-    state.leaves.get(state.focusedId)?.el?.classList.remove('focused');
+    findTabForLeaf(state.focusedId)?.leaves.get(state.focusedId)?.el?.classList.remove('focused');
   }
   state.focusedId = id;
-  state.leaves.get(id)?.el?.classList.add('focused');
+  findTabForLeaf(id)?.leaves.get(id)?.el?.classList.add('focused');
 }
 
 function blurAll() {
   if (state.focusedId) {
-    state.leaves.get(state.focusedId)?.el?.classList.remove('focused');
+    findTabForLeaf(state.focusedId)?.leaves.get(state.focusedId)?.el?.classList.remove('focused');
     state.focusedId = null;
   }
 }
 
-// ═══ Splitter drag ══════════════════════════════════════════════════════════
+// ═══ Splitter drag ════════════════════════════════════════════════════════════
 
 function initSplitterDrag(splitterEl, splitNode, paneAEl, splitContainerEl) {
   splitterEl.addEventListener('mousedown', e => {
@@ -825,29 +1343,26 @@ function initSplitterDrag(splitterEl, splitNode, paneAEl, splitContainerEl) {
   });
 }
 
-// ═══ Drop preview ═══════════════════════════════════════════════════════════
+// ═══ Drop preview ════════════════════════════════════════════════════════════
 
-function ensureDropPreview() {
-  const canvas = document.getElementById('tile-canvas');
-  let preview = document.getElementById('tile-drop-preview');
+function ensureDropPreview(canvasEl) {
+  let preview = canvasEl.querySelector('.tile-drop-preview');
   if (!preview) {
     preview = document.createElement('div');
-    preview.id = 'tile-drop-preview';
-    canvas.appendChild(preview);
+    preview.className = 'tile-drop-preview';
+    canvasEl.appendChild(preview);
   }
   return preview;
 }
 
-function hideDropPreview() {
-  document.getElementById('tile-drop-preview')?.remove();
+function hideDropPreview(canvasEl) {
+  canvasEl?.querySelector('.tile-drop-preview')?.remove();
 }
 
-// Returns { tileEl, leafId, edge, rect } for the leaf under the cursor, or null.
-function pickDropTarget(clientX, clientY) {
-  const canvas = document.getElementById('tile-canvas');
+function pickDropTarget(tab, clientX, clientY) {
+  const canvas = tab.canvasEl;
   if (!canvas) return null;
-  // Empty canvas: special target
-  if (!state.layoutTree) {
+  if (!tab.layoutTree) {
     const cr = canvas.getBoundingClientRect();
     return { tileEl: null, leafId: null, edge: 'root', rect: cr };
   }
@@ -855,18 +1370,15 @@ function pickDropTarget(clientX, clientY) {
   if (!elAtPoint) return null;
   const tileEl = elAtPoint.closest('.tile');
   if (!tileEl || !canvas.contains(tileEl)) return null;
-  // Reject inner tiles that live inside a .tile-content (they belong to a nested engine)
   if (tileEl.closest('.tile-content')) return null;
   const leafId = tileEl.id.replace(/^tile-/, '');
   const rect = tileEl.getBoundingClientRect();
   const relX = (clientX - rect.left) / rect.width;
   const relY = (clientY - rect.top) / rect.height;
 
-  // Center zone: inner 50% × 50%
   if (relX >= 0.25 && relX <= 0.75 && relY >= 0.25 && relY <= 0.75) {
     return { tileEl, leafId, edge: 'center', rect };
   }
-  // Outer edges: pick the nearest edge by distance to that edge
   const distLeft   = relX;
   const distRight  = 1 - relX;
   const distTop    = relY;
@@ -880,10 +1392,10 @@ function pickDropTarget(clientX, clientY) {
   return { tileEl, leafId, edge, rect };
 }
 
-function showDropPreview(target) {
-  const canvas = document.getElementById('tile-canvas');
+function showDropPreview(tab, target) {
+  const canvas = tab.canvasEl;
   const canvasRect = canvas.getBoundingClientRect();
-  const preview = ensureDropPreview();
+  const preview = ensureDropPreview(canvas);
   preview.classList.toggle('swap', target.edge === 'center');
 
   const r = target.rect;
@@ -896,7 +1408,6 @@ function showDropPreview(target) {
   if (target.edge === 'right')  { left += r.width / 2; width = r.width / 2; }
   if (target.edge === 'top')    height = r.height / 2;
   if (target.edge === 'bottom') { top  += r.height / 2; height = r.height / 2; }
-  // center / root: full target rect
 
   preview.style.left   = `${left}px`;
   preview.style.top    = `${top}px`;
@@ -904,23 +1415,22 @@ function showDropPreview(target) {
   preview.style.height = `${height}px`;
 }
 
-// ═══ Sidebar → canvas DnD (HTML5) ═══════════════════════════════════════════
+// ═══ Per-tab canvas DnD ══════════════════════════════════════════════════════
 
-function initCanvasSidebarDnD() {
-  const canvas = document.getElementById('tile-canvas');
-  if (!canvas) return;
+function initCanvasDnD(tab) {
+  const canvas = tab.canvasEl;
 
   canvas.addEventListener('dragover', e => {
     if (!e.dataTransfer.types.includes('tile-name') && !e.dataTransfer.types.includes('plugin-name')) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
-    const target = pickDropTarget(e.clientX, e.clientY);
-    if (target) showDropPreview(target);
-    else hideDropPreview();
+    const target = pickDropTarget(tab, e.clientX, e.clientY);
+    if (target) showDropPreview(tab, target);
+    else hideDropPreview(canvas);
   });
 
   canvas.addEventListener('dragleave', e => {
-    if (!canvas.contains(e.relatedTarget)) hideDropPreview();
+    if (!canvas.contains(e.relatedTarget)) hideDropPreview(canvas);
   });
 
   canvas.addEventListener('drop', async e => {
@@ -928,8 +1438,8 @@ function initCanvasSidebarDnD() {
     const pluginName = e.dataTransfer.getData('plugin-name');
     if (!tileName && !pluginName) return;
     e.preventDefault();
-    const target = pickDropTarget(e.clientX, e.clientY);
-    hideDropPreview();
+    const target = pickDropTarget(tab, e.clientX, e.clientY);
+    hideDropPreview(canvas);
     if (!target) return;
 
     let tileType = tileName;
@@ -943,12 +1453,7 @@ function initCanvasSidebarDnD() {
     }
 
     const newId = generateId();
-    const newLeaf = {
-      type: 'leaf',
-      id: newId,
-      tileType,
-      notifyState: null,
-    };
+    const newLeaf = { type: 'leaf', id: newId, tileType, notifyState: null };
 
     if (initCmd) {
       try {
@@ -966,60 +1471,55 @@ function initCanvasSidebarDnD() {
     }
 
     if (target.edge === 'root') {
-      state.layoutTree = newLeaf;
+      tab.layoutTree = newLeaf;
     } else if (target.edge === 'center') {
-      // Center drop = replace target with new leaf (and target leaf is closed)
-      // But we never want to lose a tile by accident — fall back to a left-split.
-      insertTile(target.leafId, 'left', newLeaf);
+      insertTile(tab, target.leafId, 'left', newLeaf);
     } else {
-      insertTile(target.leafId, target.edge, newLeaf);
+      insertTile(tab, target.leafId, target.edge, newLeaf);
     }
-    renderTree();
+    renderTree(tab);
     focusTile(newLeaf.id);
     scheduleSaveLayout();
   });
+}
 
-  // Global blur: clicking anywhere outside a tile drops focus
+function initGlobalListeners() {
   document.addEventListener('mousedown', e => {
     if (e.target instanceof Element && e.target.closest('.tile')) return;
     blurAll();
   });
 
-  // Window-drag titlebar regions don't reliably bubble mousedown to document
-  // (because of -webkit-app-region: drag), so listen explicitly.
   document.getElementById('md-titlebar')?.addEventListener('mousedown', blurAll);
 
-  // Alt-tab or focusing another window: hide focus visual but keep state,
-  // so it restores when the window regains focus.
   window.addEventListener('blur',  () => document.body.classList.add('window-blurred'));
   window.addEventListener('focus', () => document.body.classList.remove('window-blurred'));
 }
 
-// ═══ Tile titlebar → move/swap (custom mouse drag) ══════════════════════════
+// ═══ Tile titlebar → move/swap ════════════════════════════════════════════════
 
 let activeMoveDrag = null;
 
 function initTileMoveDrag(titlebar, sourceId) {
   titlebar.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
-    // Ignore clicks on the close button (it has its own stopPropagation)
     if (e.target.closest('.tile-close')) return;
     e.preventDefault();
     activeMoveDrag = { sourceId, target: null };
 
     function onMove(ev) {
-      const target = pickDropTarget(ev.clientX, ev.clientY);
-      // Don't allow dropping onto self (no-op)
+      const tab = findTabForLeaf(sourceId);
+      if (!tab) return;
+      const target = pickDropTarget(tab, ev.clientX, ev.clientY);
       if (target && target.leafId === sourceId) {
-        hideDropPreview();
+        hideDropPreview(tab.canvasEl);
         activeMoveDrag.target = null;
         return;
       }
       if (target) {
-        showDropPreview(target);
+        showDropPreview(tab, target);
         activeMoveDrag.target = target;
       } else {
-        hideDropPreview();
+        hideDropPreview(tab.canvasEl);
         activeMoveDrag.target = null;
       }
     }
@@ -1027,7 +1527,8 @@ function initTileMoveDrag(titlebar, sourceId) {
     function onUp() {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      hideDropPreview();
+      const tab = findTabForLeaf(sourceId);
+      if (tab) hideDropPreview(tab.canvasEl);
       const drag = activeMoveDrag;
       activeMoveDrag = null;
       if (!drag || !drag.target) return;
@@ -1040,31 +1541,30 @@ function initTileMoveDrag(titlebar, sourceId) {
 }
 
 function applyMove(sourceId, target) {
-  if (target.edge === 'root') return;  // can't happen mid-drag of existing tile
+  const tab = findTabForLeaf(sourceId);
+  if (!tab) return;
+  if (target.edge === 'root') return;
   if (target.edge === 'center') {
-    swapLeaves(sourceId, target.leafId);
+    swapLeaves(tab, sourceId, target.leafId);
   } else {
-    // Move: detach source, then insert at target+edge
-    const found = findLeafAndParent(state.layoutTree, sourceId);
+    const found = findLeafAndParent(tab.layoutTree, sourceId);
     if (!found) return;
     const sourceLeaf = found.leaf;
-    removeLeaf(sourceId);
-    // After removal, target leaf may now be at a different tree position but its id is unchanged.
-    // Re-find the target leaf and insert.
-    if (!state.layoutTree) {
-      state.layoutTree = sourceLeaf;
+    removeLeaf(tab, sourceId);
+    if (!tab.layoutTree) {
+      tab.layoutTree = sourceLeaf;
     } else {
-      insertTile(target.leafId, target.edge, sourceLeaf);
+      insertTile(tab, target.leafId, target.edge, sourceLeaf);
     }
   }
-  renderTree();
+  renderTree(tab);
   focusTile(sourceId);
   scheduleSaveLayout();
 }
 
-// ═══ Mount tile content ═════════════════════════════════════════════════════
+// ═══ Mount tile content ═══════════════════════════════════════════════════════
 
-async function mountTileContent(leafNode, contentEl) {
+async function mountTileContent(tab, leafNode, contentEl) {
   const tileDef = state.tiles.find(t => t.name === leafNode.tileType);
   if (!tileDef) return;
 
@@ -1083,17 +1583,17 @@ async function mountTileContent(leafNode, contentEl) {
   }
   if (typeof mod.mount !== 'function') return;
 
-  const api = buildTileApi(leafNode.id);
+  const api = buildTileApi(tab, leafNode.id);
   try {
     const cleanup = await mod.mount(contentEl, api);
-    const info = state.leaves.get(leafNode.id);
+    const info = tab.leaves.get(leafNode.id);
     if (info) info.cleanup = typeof cleanup === 'function' ? cleanup : null;
   } catch (e) {
     console.error(`[tiles] mount() error for ${leafNode.tileType}:`, e);
   }
 }
 
-function buildTileApi(leafId) {
+function buildTileApi(tab, leafId) {
   return {
     tileId: leafId,
     async getContent() {
@@ -1107,7 +1607,7 @@ function buildTileApi(leafId) {
       } catch { return null; }
     },
     saveContent(data) {
-      const info = state.leaves.get(leafId);
+      const info = tab.leaves.get(leafId);
       if (!info) return;
       clearTimeout(info._saveTimer);
       info._saveTimer = setTimeout(async () => {
@@ -1126,12 +1626,23 @@ function buildTileApi(leafId) {
   };
 }
 
-// ═══ Close tile ═════════════════════════════════════════════════════════════
+// ═══ Close tile ═══════════════════════════════════════════════════════════════
 
 async function closeTile(id) {
-  if (!findLeafAndParent(state.layoutTree, id)) return;
-  removeLeaf(id);
-  renderTree();   // cleanup runs inside renderTree for removed leaves
+  const tab = findTabForLeaf(id);
+  if (!tab) {
+    // Fall back to searching all tabs' layout trees
+    const fallbackTab = state.tabs.find(t => findLeafAndParent(t.layoutTree, id));
+    if (!fallbackTab) return;
+    return closeTileInTab(fallbackTab, id);
+  }
+  return closeTileInTab(tab, id);
+}
+
+async function closeTileInTab(tab, id) {
+  if (!findLeafAndParent(tab.layoutTree, id)) return;
+  removeLeaf(tab, id);
+  renderTree(tab);
   if (state.focusedId === id) state.focusedId = null;
   try {
     await fetch(
@@ -1142,7 +1653,7 @@ async function closeTile(id) {
   scheduleSaveLayout();
 }
 
-// ═══ Layout persistence ═════════════════════════════════════════════════════
+// ═══ Layout persistence ═══════════════════════════════════════════════════════
 
 function scheduleSaveLayout() {
   clearTimeout(state.saveLayoutTimer);
@@ -1165,12 +1676,22 @@ function serializeNode(node) {
 
 async function saveLayout() {
   try {
+    const data = {
+      version: 2,
+      activeTabIndex: state.activeTabIndex,
+      tabs: state.tabs.map(t => ({
+        id: t.id,
+        label: t.label,
+        color: t.color,
+        layoutTree: serializeNode(t.layoutTree),
+      })),
+    };
     await fetch(
       `/api/layout?path=${encodeURIComponent(state.workspacePath)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tree: serializeNode(state.layoutTree) }),
+        body: JSON.stringify(data),
       }
     );
   } catch (e) { console.error('[tiles] saveLayout error:', e); }
@@ -1194,7 +1715,7 @@ function validateAndCleanTree(node, knownTypes) {
       const ratio = (typeof node.ratio === 'number' && node.ratio > 0 && node.ratio < 1) ? node.ratio : 0.5;
       return { type: 'split', dir, ratio, a, b };
     }
-    return a || b || null;  // one side missing → promote the surviving side
+    return a || b || null;
   }
   return null;
 }
@@ -1202,19 +1723,53 @@ function validateAndCleanTree(node, knownTypes) {
 async function loadLayout() {
   try {
     const res = await fetch(`/api/layout?path=${encodeURIComponent(state.workspacePath)}`);
-    if (res.status === 404) return;
-    const data = await res.json();
-    if (!data || !('tree' in data)) {
-      console.warn('[tiles] Layout file in unrecognized format; starting empty');
+    if (res.status === 404) {
+      // Fresh workspace — default tab already created in init()
+      renderTree(activeTab());
       return;
     }
+    const data = await res.json();
     const knownTypes = new Set(state.tiles.map(t => t.name));
-    state.layoutTree = validateAndCleanTree(data.tree, knownTypes);
-    renderTree();
+
+    if (data?.version === 2 && Array.isArray(data.tabs) && data.tabs.length > 0) {
+      // Remove the default tab canvas created in init()
+      state.tabs[0].canvasEl.remove();
+      state.tabs = [];
+
+      for (const tabData of data.tabs) {
+        const canvasEl = createTabCanvas();
+        const tab = {
+          id: typeof tabData.id === 'string' ? tabData.id : generateId(),
+          label: typeof tabData.label === 'string' ? tabData.label : 'Tab',
+          color: TAB_COLORS.includes(tabData.color) ? tabData.color : TAB_COLORS[0],
+          layoutTree: validateAndCleanTree(tabData.layoutTree ?? null, knownTypes),
+          canvasEl,
+          leaves: new Map(),
+        };
+        state.tabs.push(tab);
+        initCanvasDnD(tab);
+      }
+      state.activeTabIndex = Math.min(data.activeTabIndex ?? 0, state.tabs.length - 1);
+
+    } else if (data && 'tree' in data) {
+      // v1 layout — wrap in default tab
+      state.tabs[0].layoutTree = validateAndCleanTree(data.tree, knownTypes);
+
+    } else {
+      console.warn('[tiles] Layout file in unrecognized format; starting empty');
+    }
+
+    // Show active tab, render it
+    for (const tab of state.tabs) tab.canvasEl.classList.add('hidden');
+    const tab = state.tabs[state.activeTabIndex];
+    tab.canvasEl.classList.remove('hidden');
+    renderTree(tab);
+    buildTabsList();
+
   } catch (e) { console.error('[tiles] loadLayout error:', e); }
 }
 
-// ═══ Close confirmation ══════════════════════════════════════════════════════
+// ═══ Close confirmation ═══════════════════════════════════════════════════════
 
 function injectConfirmModalStyles() {
   const style = document.createElement('style');
@@ -1322,7 +1877,7 @@ function confirmClearAll() {
   box.id = 'md-confirm-box';
   box.innerHTML = `
     <p>Clear all tiles?</p>
-    <span>All tiles will be closed and their saved content deleted. This cannot be undone.</span>
+    <span>All tiles on this tab will be closed and their saved content deleted. This cannot be undone.</span>
     <div id="md-confirm-buttons">
       <button id="md-confirm-cancel">Cancel</button>
       <button id="md-confirm-ok">Clear all</button>
@@ -1347,9 +1902,10 @@ function confirmClearAll() {
 }
 
 async function clearAll() {
-  state.layoutTree = null;
-  state.focusedId  = null;
-  renderTree();
+  const tab = activeTab();
+  tab.layoutTree = null;
+  state.focusedId = null;
+  renderTree(tab);
   scheduleSaveLayout();
   try {
     await fetch(
@@ -1359,7 +1915,7 @@ async function clearAll() {
   } catch { /* ignore */ }
 }
 
-// ═══ Context menu (Copy / Paste) ════════════════════════════════════════════
+// ═══ Context menu (Copy / Paste) ══════════════════════════════════════════════
 
 function injectContextMenuStyles() {
   const style = document.createElement('style');
@@ -1417,7 +1973,6 @@ function getContextSelection(tileEl) {
     content.dispatchEvent(ev);
     if (ev.detail.text != null || ev.detail.editable) return ev.detail;
   }
-  // Defaults: native textarea/input selection, then window selection
   const ae = focusedEditable();
   if (ae) {
     const s = ae.selectionStart, e = ae.selectionEnd;
@@ -1470,10 +2025,7 @@ function applyContextSelectAll(tileEl) {
     if (ev.defaultPrevented) return;
   }
   const ae = focusedEditable();
-  if (ae) {
-    ae.select();
-    return;
-  }
+  if (ae) { ae.select(); return; }
   if (content) {
     const range = document.createRange();
     range.selectNodeContents(content);
@@ -1489,13 +2041,11 @@ async function showContextMenu(x, y, tileEl) {
   let clipboardText = '';
   try { clipboardText = await navigator.clipboard.readText(); } catch { /* permission denied */ }
 
-  const hasSel    = !!sel.text;
-  const editable  = !!sel.editable;
-  const canCut    = hasSel && editable;
-  const canCopy   = hasSel;
-  const canPaste  = !!clipboardText;
+  const hasSel   = !!sel.text;
+  const editable = !!sel.editable;
+  const canCut   = hasSel && editable;
+  const canPaste = !!clipboardText;
   const canDelete = hasSel && editable;
-  // Select All is always offered — tiles or default DOM handles the rest.
 
   const menu = document.createElement('div');
   menu.id = 'md-ctx-menu';
@@ -1503,7 +2053,7 @@ async function showContextMenu(x, y, tileEl) {
     <div class="md-ctx-item${canCut    ? '' : ' disabled'}" data-act="cut">
       <span>Cut</span><span class="md-ctx-shortcut">Ctrl+X</span>
     </div>
-    <div class="md-ctx-item${canCopy   ? '' : ' disabled'}" data-act="copy">
+    <div class="md-ctx-item${hasSel   ? '' : ' disabled'}" data-act="copy">
       <span>Copy</span><span class="md-ctx-shortcut">Ctrl+C</span>
     </div>
     <div class="md-ctx-item${canPaste  ? '' : ' disabled'}" data-act="paste">
@@ -1549,7 +2099,6 @@ async function showContextMenu(x, y, tileEl) {
 function initContextMenu() {
   injectContextMenuStyles();
   document.addEventListener('contextmenu', e => {
-    // Only show our menu for clicks inside the tile canvas (tiles + their content).
     const tileEl = e.target instanceof Element ? e.target.closest('.tile') : null;
     if (!tileEl) return;
     e.preventDefault();
@@ -1564,291 +2113,49 @@ function initContextMenu() {
   window.addEventListener('blur', closeContextMenu);
 }
 
-// ═══ Preferences modal ══════════════════════════════════════════════════════
+// ═══ Preferences modal ═══════════════════════════════════════════════════════
 
-function injectPreferencesModalStyles() {
-  const style = document.createElement('style');
-  style.textContent = `
-    #md-prefs-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 20000;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #md-prefs-dialog {
-      background: #1e1e1e;
-      border: 1px solid #444;
-      border-radius: 6px;
-      width: 560px;
-      max-height: 480px;
-      display: flex;
-      flex-direction: column;
-      font-family: ${FONT_STACK};
-      font-size: 13px;
-      color: #ddd;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-      overflow: hidden;
-    }
-    #md-prefs-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 16px 10px;
-      border-bottom: 1px solid #333;
-      flex-shrink: 0;
-    }
-    #md-prefs-header h2 {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 600;
-      color: #eee;
-    }
-    #md-prefs-close {
-      background: none;
-      border: none;
-      color: #888;
-      font-size: 16px;
-      cursor: pointer;
-      padding: 0 2px;
-      line-height: 1;
-    }
-    #md-prefs-close:hover { color: #eee; }
-    #md-prefs-body {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-    #md-prefs-nav {
-      width: 130px;
-      flex-shrink: 0;
-      border-right: 1px solid #333;
-      padding: 8px 0;
-      overflow-y: auto;
-    }
-    .md-prefs-nav-item {
-      padding: 7px 16px;
-      cursor: default;
-      color: #bbb;
-      font-size: 13px;
-      border-radius: 3px;
-      margin: 0 4px;
-    }
-    .md-prefs-nav-item:hover { background: #2a2a2a; color: #eee; }
-    .md-prefs-nav-item.active { background: #094771; color: #fff; }
-    #md-prefs-content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px 16px;
-    }
-    .md-prefs-section-title {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #666;
-      margin: 0 0 10px;
-    }
-    .md-prefs-tile-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 6px 4px;
-      border-radius: 4px;
-      cursor: default;
-    }
-    .md-prefs-tile-row:hover { background: #252525; }
-    .md-prefs-tile-row label {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex: 1;
-      cursor: pointer;
-    }
-    .md-prefs-tile-row input[type="checkbox"] {
-      width: 14px;
-      height: 14px;
-      accent-color: #4fc1ff;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-    .md-prefs-tile-icon {
-      width: 20px;
-      height: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #ccc;
-      flex-shrink: 0;
-    }
-    .md-prefs-tile-icon svg { width: 18px; height: 18px; }
-    .md-prefs-tile-info { flex: 1; min-width: 0; }
-    .md-prefs-tile-label { font-size: 13px; color: #ddd; }
-    .md-prefs-tile-desc { font-size: 11px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #md-prefs-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      padding: 10px 16px;
-      border-top: 1px solid #333;
-      flex-shrink: 0;
-    }
-    #md-prefs-cancel {
-      background: transparent;
-      border: 1px solid #555;
-      border-radius: 4px;
-      color: #ccc;
-      padding: 5px 14px;
-      font-family: ${FONT_STACK};
-      font-size: 13px;
-      cursor: pointer;
-    }
-    #md-prefs-cancel:hover { border-color: #888; color: #eee; }
-    #md-prefs-apply {
-      background: #0e639c;
-      border: 1px solid #1177bb;
-      border-radius: 4px;
-      color: #fff;
-      padding: 5px 14px;
-      font-family: ${FONT_STACK};
-      font-size: 13px;
-      cursor: pointer;
-    }
-    #md-prefs-apply:hover { background: #1177bb; }
-  `;
-  document.head.appendChild(style);
-}
-
-function openPreferencesModal() {
-  if (document.getElementById('md-prefs-overlay')) return;
-
-  const overlay = document.createElement('div');
-  overlay.id = 'md-prefs-overlay';
-
-  const dialog = document.createElement('div');
-  dialog.id = 'md-prefs-dialog';
-
-  // Header
-  const header = document.createElement('div');
-  header.id = 'md-prefs-header';
-  header.innerHTML = `<h2>Preferences</h2>`;
-  const closeBtn = document.createElement('button');
-  closeBtn.id = 'md-prefs-close';
-  closeBtn.textContent = '✕';
-  header.appendChild(closeBtn);
-  dialog.appendChild(header);
-
-  // Body
-  const body = document.createElement('div');
-  body.id = 'md-prefs-body';
-
-  // Nav
-  const nav = document.createElement('div');
-  nav.id = 'md-prefs-nav';
-  const navTiles = document.createElement('div');
-  navTiles.className = 'md-prefs-nav-item active';
-  navTiles.textContent = 'Tiles';
-  nav.appendChild(navTiles);
-  body.appendChild(nav);
-
-  // Content
-  const content = document.createElement('div');
-  content.id = 'md-prefs-content';
-
-  const sectionTitle = document.createElement('div');
-  sectionTitle.className = 'md-prefs-section-title';
-  sectionTitle.textContent = 'Show tiles in sidebar';
-  content.appendChild(sectionTitle);
-
-  // Build working copy of hidden tiles for this session
-  const pendingHidden = new Set(state.hiddenTiles);
-
-  for (const tile of state.tiles) {
-    const row = document.createElement('div');
-    row.className = 'md-prefs-tile-row';
-
-    const label = document.createElement('label');
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = !pendingHidden.has(tile.name);
-    checkbox.dataset.tileName = tile.name;
-
-    const iconEl = document.createElement('span');
-    iconEl.className = 'md-prefs-tile-icon';
-    iconEl.innerHTML = tile.icon;
-
-    const infoEl = document.createElement('div');
-    infoEl.className = 'md-prefs-tile-info';
-    infoEl.innerHTML = `
-      <div class="md-prefs-tile-label">${escapeHtml(tile.label)}</div>
-      <div class="md-prefs-tile-desc">${escapeHtml(tile.description)}</div>
-    `;
-
-    label.appendChild(checkbox);
-    label.appendChild(iconEl);
-    label.appendChild(infoEl);
-    row.appendChild(label);
-    content.appendChild(row);
-  }
-
-  body.appendChild(content);
-  dialog.appendChild(body);
-
-  // Footer
-  const footer = document.createElement('div');
-  footer.id = 'md-prefs-footer';
-  const cancelBtn = document.createElement('button');
-  cancelBtn.id = 'md-prefs-cancel';
-  cancelBtn.textContent = 'Cancel';
-  const applyBtn = document.createElement('button');
-  applyBtn.id = 'md-prefs-apply';
-  applyBtn.textContent = 'Apply';
-  footer.appendChild(cancelBtn);
-  footer.appendChild(applyBtn);
-  dialog.appendChild(footer);
-
-  overlay.appendChild(dialog);
-  document.body.appendChild(overlay);
-
-  function dismiss() { overlay.remove(); }
-
-  function apply() {
-    const newHidden = new Set();
-    content.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-      if (!cb.checked) newHidden.add(cb.dataset.tileName);
-    });
-    state.hiddenTiles = newHidden;
-    persistSidebarPrefs();
-    const search = document.getElementById('sb-search');
-    renderTileList(search ? search.value.trim().toLowerCase() : '');
-    dismiss();
-  }
-
-  closeBtn.addEventListener('click', dismiss);
-  cancelBtn.addEventListener('click', dismiss);
-  applyBtn.addEventListener('click', apply);
-  overlay.addEventListener('mousedown', e => { if (e.target === overlay) dismiss(); });
-  document.addEventListener('keydown', function onKey(e) {
-    if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', onKey); }
-    else if (e.key === 'Enter') { apply(); document.removeEventListener('keydown', onKey); }
+function openPreferencesModalWithState() {
+  openPreferencesModal({
+    onApply({ hiddenTiles }) {
+      state.hiddenTiles = hiddenTiles;
+      persistSidebarPrefs();
+      const search = document.getElementById('sb-search');
+      renderTileList(search ? search.value.trim().toLowerCase() : '');
+    },
   });
 }
 
-// ═══ Entry point ════════════════════════════════════════════════════════════
+
+// ═══ Entry point ══════════════════════════════════════════════════════════════
 
 export async function init(opts) {
   state.workspacePath = opts.workspacePath ?? '';
   injectStyles();
-  await initSidebar();
+  injectConfirmModalStyles();
+
+  // Create default tab before loading anything
+  const defaultCanvas = createTabCanvas();
+  defaultCanvas.classList.remove('hidden');
+  state.tabs = [{
+    id: generateId(),
+    label: 'Tab 1',
+    color: TAB_COLORS[0],
+    layoutTree: null,
+    canvasEl: defaultCanvas,
+    leaves: new Map(),
+  }];
+  initCanvasDnD(state.tabs[0]);
+
+  const prefs = await loadPreferences();
+  initSidebar(prefs);
+  initTabsSidebar(prefs);
+
   await loadTileDefinitions();
   buildSidebar();
+  buildTabsList();
   await loadLayout();
-  initCanvasSidebarDnD();
-  injectConfirmModalStyles();
-  injectPreferencesModalStyles();
+  initGlobalListeners();
   initContextMenu();
-  window.addEventListener('md-open-preferences', openPreferencesModal);
+  window.addEventListener('md-open-preferences', openPreferencesModalWithState);
 }
