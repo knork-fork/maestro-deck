@@ -8,6 +8,7 @@ const FONT_STACK = `-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Ro
 const state = {
   workspacePath: '',
   tiles: [],                          // tile definitions from /api/tiles
+  plugins: [],                        // plugin definitions from /api/plugins
   layoutTree: null,                   // Node | null
   leaves: new Map(),                  // id → { el, contentEl, cleanup, _saveTimer, tileType, notifyState }
   focusedId: null,
@@ -320,7 +321,8 @@ async function initSidebar() {
   if (prefs?.sidebar != null) {
     state.sidebarOpen  = prefs.sidebar.open ?? true;
     state.sidebarWidth = prefs.sidebar.width ?? SIDEBAR_DEFAULT_WIDTH;
-    state.activeTab    = prefs.sidebar.activeTab ?? 'tiles';
+    const savedTab = prefs.sidebar.activeTab ?? 'tiles';
+    state.activeTab = savedTab === 'skills' ? 'tiles' : savedTab;
   }
   state.hiddenTiles = new Set(prefs?.hiddenTiles ?? []);
   applySidebar(false);
@@ -366,7 +368,7 @@ function buildSidebar() {
   sidebar.innerHTML = `
     <div id="sb-tabs">
       <button class="sb-tab${state.activeTab === 'tiles' ? ' active' : ''}" data-tab="tiles">Tiles</button>
-      <button class="sb-tab${state.activeTab === 'skills' ? ' active' : ''}" data-tab="skills">(TBA)</button>
+      <button class="sb-tab${state.activeTab === 'plugins' ? ' active' : ''}" data-tab="plugins">Plugins</button>
     </div>
     <div id="sb-search-wrap">
       <input id="sb-search" type="search" placeholder="Search tiles…" autocomplete="off" spellcheck="false">
@@ -374,10 +376,10 @@ function buildSidebar() {
     <div id="sb-panel-tiles" class="sb-panel${state.activeTab === 'tiles' ? '' : ' hidden'}">
       <div class="sb-section-label" id="sb-label-app">Tiles</div>
       <div id="sb-app-tiles"></div>
-      <div class="sb-section-label" id="sb-label-imported">Plugins</div>
+      <div class="sb-section-label" id="sb-label-imported">Imported</div>
       <div id="sb-imported-tiles"></div>
     </div>
-    <div id="sb-panel-skills" class="sb-panel${state.activeTab === 'skills' ? '' : ' hidden'}"></div>
+    <div id="sb-panel-plugins" class="sb-panel${state.activeTab === 'plugins' ? '' : ' hidden'}"></div>
     <button id="sb-clear-all">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
         <polyline points="3,4 13,4"/>
@@ -397,7 +399,9 @@ function buildSidebar() {
       const tabName = tab.dataset.tab;
       state.activeTab = tabName;
       document.getElementById('sb-panel-tiles')?.classList.toggle('hidden', tabName !== 'tiles');
-      document.getElementById('sb-panel-skills')?.classList.toggle('hidden', tabName !== 'skills');
+      document.getElementById('sb-panel-plugins')?.classList.toggle('hidden', tabName !== 'plugins');
+      if (tabName === 'plugins') renderPluginList('');
+      else if (tabName === 'tiles') renderTileList(document.getElementById('sb-search')?.value.trim().toLowerCase() || '');
       persistSidebarPrefs();
     });
   });
@@ -409,6 +413,7 @@ function buildSidebar() {
   document.getElementById('sb-clear-all')?.addEventListener('click', confirmClearAll);
 
   renderTileList('');
+  if (state.activeTab === 'plugins') renderPluginList('');
 }
 
 function renderTileList(filter) {
@@ -441,6 +446,55 @@ function renderTileList(filter) {
 
   if (appLabel)      appLabel.style.display      = appCount      === 0 ? 'none' : '';
   if (importedLabel) importedLabel.style.display = importedCount === 0 ? 'none' : '';
+}
+
+function renderPluginList(filter) {
+  const panel = document.getElementById('sb-panel-plugins');
+  if (!panel) return;
+  panel.innerHTML = '';
+
+  const filtered = state.plugins.filter(p =>
+    !filter ||
+    p.label.toLowerCase().includes(filter) ||
+    p.description.toLowerCase().includes(filter)
+  );
+
+  if (filtered.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'padding: 12px 16px; color: var(--sb-muted, #888); font-size: 12px;';
+    empty.textContent = filter ? 'No plugins match.' : 'No plugins installed.';
+    panel.appendChild(empty);
+    return;
+  }
+
+  for (const plugin of filtered) {
+    const el = document.createElement('div');
+    el.className = 'sb-tile-item';
+    el.draggable = true;
+    el.dataset.pluginName = plugin.name;
+    el.title = plugin.description;
+
+    const iconEl = document.createElement('span');
+    iconEl.className = 'sb-tile-icon';
+    iconEl.innerHTML = plugin.icon;
+
+    const infoEl = document.createElement('div');
+    infoEl.className = 'sb-tile-info';
+    infoEl.innerHTML = `
+      <div class="sb-tile-label">${escapeHtml(plugin.label)}</div>
+      <div class="sb-tile-desc">${escapeHtml(plugin.description)}</div>
+    `;
+
+    el.appendChild(iconEl);
+    el.appendChild(infoEl);
+
+    el.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('plugin-name', plugin.name);
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+
+    panel.appendChild(el);
+  }
 }
 
 function buildTileListItem(tile) {
@@ -481,6 +535,13 @@ async function loadTileDefinitions() {
   } catch (e) {
     console.error('[tiles] Failed to load tile definitions:', e);
     state.tiles = [];
+  }
+  try {
+    const res = await fetch('/api/plugins');
+    state.plugins = await res.json();
+  } catch (e) {
+    console.error('[plugins] Failed to load plugin definitions:', e);
+    state.plugins = [];
   }
 }
 
@@ -850,7 +911,7 @@ function initCanvasSidebarDnD() {
   if (!canvas) return;
 
   canvas.addEventListener('dragover', e => {
-    if (!e.dataTransfer.types.includes('tile-name')) return;
+    if (!e.dataTransfer.types.includes('tile-name') && !e.dataTransfer.types.includes('plugin-name')) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     const target = pickDropTarget(e.clientX, e.clientY);
@@ -862,20 +923,47 @@ function initCanvasSidebarDnD() {
     if (!canvas.contains(e.relatedTarget)) hideDropPreview();
   });
 
-  canvas.addEventListener('drop', e => {
+  canvas.addEventListener('drop', async e => {
     const tileName = e.dataTransfer.getData('tile-name');
-    if (!tileName) return;
+    const pluginName = e.dataTransfer.getData('plugin-name');
+    if (!tileName && !pluginName) return;
     e.preventDefault();
     const target = pickDropTarget(e.clientX, e.clientY);
     hideDropPreview();
     if (!target) return;
 
+    let tileType = tileName;
+    let initCmd = null;
+
+    if (pluginName) {
+      const plugin = state.plugins.find(p => p.name === pluginName);
+      if (!plugin) return;
+      tileType = plugin.tileType;
+      initCmd = plugin.initCmd || null;
+    }
+
+    const newId = generateId();
     const newLeaf = {
       type: 'leaf',
-      id: generateId(),
-      tileType: tileName,
+      id: newId,
+      tileType,
       notifyState: null,
     };
+
+    if (initCmd) {
+      try {
+        await fetch(
+          `/api/tile-content?path=${encodeURIComponent(state.workspacePath)}&id=${newId}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: { initCmd } }),
+          }
+        );
+      } catch (err) {
+        console.error('[plugins] Failed to pre-seed initCmd:', err);
+      }
+    }
 
     if (target.edge === 'root') {
       state.layoutTree = newLeaf;

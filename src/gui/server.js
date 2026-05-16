@@ -15,6 +15,8 @@ const WORKSPACES_FILE = join(RESOURCES_DIR, 'workspaces.json');
 const PREFERENCES_FILE = join(RESOURCES_DIR, 'preferences.json');
 const APP_TILES_DIR = join(__dir, '..', 'tiles');
 const USER_TILES_DIR = join(RESOURCES_DIR, 'tiles');
+const APP_PLUGINS_DIR = join(__dir, '..', 'plugins');
+const USER_PLUGINS_DIR = join(RESOURCES_DIR, 'plugins');
 const PROJECTS_DIR = join(RESOURCES_DIR, 'projects');
 
 function ensureConfigDir() {
@@ -123,6 +125,51 @@ function loadTiles() {
   }
 
   console.log(`[tiles] Loaded ${map.size} tile(s)`);
+  return map;
+}
+
+function loadPlugins() {
+  const map = new Map();
+  const sources = [
+    { dir: APP_PLUGINS_DIR, source: 'app' },
+    { dir: USER_PLUGINS_DIR, source: 'user' },
+  ];
+
+  for (const { dir, source } of sources) {
+    if (!existsSync(dir)) continue;
+    let entries;
+    try { entries = readdirSync(dir); } catch { continue; }
+
+    for (const name of entries) {
+      if (!/^[a-z][a-z0-9-]*$/.test(name)) continue;
+      const pluginDir = join(dir, name);
+      try {
+        if (!statSync(pluginDir).isDirectory()) continue;
+      } catch { continue; }
+
+      const jsonPath = join(pluginDir, 'plugin.json');
+      if (!existsSync(jsonPath)) {
+        console.warn(`[plugins] Skipping ${name}: missing plugin.json`);
+        continue;
+      }
+      let manifest;
+      try { manifest = JSON.parse(readFileSync(jsonPath, 'utf8')); } catch {
+        console.warn(`[plugins] Skipping ${name}: plugin.json parse error`);
+        continue;
+      }
+      if (typeof manifest.label !== 'string' || !manifest.label ||
+          typeof manifest.description !== 'string' ||
+          typeof manifest.icon !== 'string' || !manifest.icon ||
+          typeof manifest.tileType !== 'string' || !manifest.tileType) {
+        console.warn(`[plugins] Skipping ${name}: plugin.json missing required fields (label, description, icon, tileType)`);
+        continue;
+      }
+
+      map.set(name, { source, manifest });
+    }
+  }
+
+  console.log(`[plugins] Loaded ${map.size} plugin(s)`);
   return map;
 }
 
@@ -360,6 +407,7 @@ export async function startServer() {
   const iconPng = existsSync(iconPngPath) ? readFileSync(iconPngPath) : null;
   const port = await findPort();
   const tiles = loadTiles();
+  const plugins = loadPlugins();
 
   const tileServeRe = /^\/tiles\/([a-z][a-z0-9-]*)\/((?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+)$/;
 
@@ -457,6 +505,17 @@ export async function startServer() {
           icon:        t.manifest.icon,
           source:      t.source,
           hasJs:       t.hasJs,
+        })));
+
+      } else if (url.pathname === '/api/plugins' && req.method === 'GET') {
+        json([...plugins.entries()].map(([name, p]) => ({
+          name,
+          label:       p.manifest.label,
+          description: p.manifest.description,
+          icon:        p.manifest.icon,
+          tileType:    p.manifest.tileType,
+          initCmd:     p.manifest.initCmd ?? null,
+          source:      p.source,
         })));
 
       } else if (tileServeRe.test(url.pathname) && req.method === 'GET') {
