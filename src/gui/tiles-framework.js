@@ -411,6 +411,7 @@ function buildTileListItem(tile) {
   el.className = 'sb-tile-item';
   el.draggable = true;
   el.dataset.tileName = tile.name;
+  el.title = tile.description;
 
   const iconEl = document.createElement('span');
   iconEl.className = 'sb-tile-icon';
