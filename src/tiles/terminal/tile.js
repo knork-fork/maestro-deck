@@ -177,6 +177,32 @@ export async function mount(container, api) {
   });
   resizeObs.observe(wrap);
 
+  // Drop target: accept text drags from notepad tiles.
+  let dragCount = 0;
+  wrap.addEventListener('dragenter', e => {
+    if (e.dataTransfer.types.includes('application/x-maestro-text')) {
+      if (++dragCount === 1) wrap.classList.add('drag-over');
+    }
+  });
+  wrap.addEventListener('dragleave', () => {
+    if (--dragCount <= 0) { dragCount = 0; wrap.classList.remove('drag-over'); }
+  });
+  wrap.addEventListener('dragover', e => {
+    if (e.dataTransfer.types.includes('application/x-maestro-text')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+  wrap.addEventListener('drop', e => {
+    dragCount = 0;
+    wrap.classList.remove('drag-over');
+    if (!e.dataTransfer.types.includes('application/x-maestro-text')) return;
+    e.preventDefault();
+    const text = e.dataTransfer.getData('text/plain');
+    if (text && connected) ws.send(JSON.stringify({ type: 'input', data: text }));
+    term.focus();
+  });
+
   // Focus xterm when user clicks anywhere inside the wrapper.
   wrap.addEventListener('mousedown', e => {
     if (e.target.closest('.xterm-helper-textarea')) return;
