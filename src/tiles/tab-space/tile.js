@@ -304,24 +304,30 @@ export async function mount(container, api) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  function renderTabTree(tab, canvasEl) {
-    const newLeafIds = new Set();
-    if (tab.layoutTree) collectLeafIds(tab.layoutTree, newLeafIds);
+  function allLiveLeafIds() {
+    const ids = new Set();
+    for (const t of engine.tabs) if (t.layoutTree) collectLeafIds(t.layoutTree, ids);
+    return ids;
+  }
 
+  function renderTabTree(tab, canvasEl) {
+    const tabLeafIds = new Set();
+    if (tab.layoutTree) collectLeafIds(tab.layoutTree, tabLeafIds);
+
+    // Detach only this tab's tile elements so the canvas can be rebuilt
     for (const [id, info] of engine.leaves) {
-      if (newLeafIds.has(id) && info.el?.parentNode) info.el.parentNode.removeChild(info.el);
+      if (tabLeafIds.has(id) && info.el?.parentNode) info.el.parentNode.removeChild(info.el);
     }
 
-    // Remove the drop preview before clearing (we'll re-append it as needed)
-    const existingPreview = canvasEl.querySelector('.ts-drop-preview');
-    if (existingPreview) existingPreview.remove();
-
+    canvasEl.querySelector('.ts-drop-preview')?.remove();
     canvasEl.innerHTML = '';
 
     if (tab.layoutTree) canvasEl.appendChild(renderNode(tab.layoutTree, tab, canvasEl));
 
+    // Only clean up leaves absent from every tab's tree
+    const liveIds = allLiveLeafIds();
     for (const id of [...engine.leaves.keys()]) {
-      if (!newLeafIds.has(id)) {
+      if (!liveIds.has(id)) {
         const info = engine.leaves.get(id);
         try { info.cleanup?.(); } catch {}
         clearTimeout(info._saveTimer);
@@ -567,13 +573,16 @@ export async function mount(container, api) {
   // ── Tab management ─────────────────────────────────────────────────────────
 
   function switchToTab(index) {
-    // Hide all canvases
     for (const el of canvasEls.values()) el.classList.add('hidden');
     engine.activeTabIndex = index;
     const tab = engine.tabs[index];
     const canvasEl = ensureCanvasEl(tab);
     canvasEl.classList.remove('hidden');
-    renderTabTree(tab, canvasEl);
+    // Only do the initial render; subsequent switches just show the existing DOM
+    if (!canvasEl._initialized) {
+      canvasEl._initialized = true;
+      renderTabTree(tab, canvasEl);
+    }
     renderTabBar();
     scheduleSave();
   }
@@ -637,11 +646,12 @@ export async function mount(container, api) {
     engine.activeTabIndex = 0;
   }
 
-  // Create canvas elements for all tabs, show the active one
+  // Create canvas elements for all tabs, then show the active one
   for (const tab of engine.tabs) ensureCanvasEl(tab);
   const activeTab = engine.tabs[engine.activeTabIndex];
   const activeCanvas = canvasEls.get(activeTab.id);
   activeCanvas.classList.remove('hidden');
+  activeCanvas._initialized = true;
   renderTabTree(activeTab, activeCanvas);
   renderTabBar();
 
