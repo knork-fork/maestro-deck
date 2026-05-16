@@ -615,9 +615,9 @@ function buildSidebar() {
       <input id="sb-search" type="search" placeholder="Search ${state.activeTab === 'plugins' ? 'plugins' : 'tiles'}…" autocomplete="off" spellcheck="false">
     </div>
     <div id="sb-panel-tiles" class="sb-panel${state.activeTab === 'tiles' ? '' : ' hidden'}">
-      <div class="sb-section-label" id="sb-label-app">Tiles</div>
+      <!--<div class="sb-section-label" id="sb-label-app">Tiles</div>-->
       <div id="sb-app-tiles"></div>
-      <div class="sb-section-label" id="sb-label-imported">Imported</div>
+      <!--<div class="sb-section-label" id="sb-label-imported">Imported</div>-->
       <div id="sb-imported-tiles"></div>
     </div>
     <div id="sb-panel-plugins" class="sb-panel${state.activeTab === 'plugins' ? '' : ' hidden'}"></div>
