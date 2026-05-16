@@ -659,11 +659,25 @@ export async function mount(container, api) {
 
   return () => {
     clearTimeout(saveTimer);
-    for (const info of engine.leaves.values()) {
+
+    // Collect every leaf ID declared across all tabs' trees (covers unvisited tabs too)
+    const allIds = new Set();
+    for (const tab of engine.tabs) {
+      if (tab.layoutTree) collectLeafIds(tab.layoutTree, allIds);
+    }
+
+    // Tear down mounted leaves (runs nested cleanup recursively for nested tab-spaces)
+    for (const [, info] of engine.leaves) {
       try { info.cleanup?.(); } catch {}
       clearTimeout(info._saveTimer);
     }
     engine.leaves.clear();
+
+    // Delete server-side content for every sub-tile
+    for (const id of allIds) {
+      fetch(`/api/tile-content?path=${encodeURIComponent(workspacePath)}&id=${id}`, { method: 'DELETE' }).catch(() => {});
+    }
+
     for (const el of canvasEls.values()) el.remove();
     canvasEls.clear();
   };
