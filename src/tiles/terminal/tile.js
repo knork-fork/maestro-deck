@@ -64,6 +64,7 @@ export async function mount(container, api) {
   const saved = await api.getContent();
   const savedScrollback = (saved && typeof saved.scrollback === 'string') ? saved.scrollback : '';
   const savedCwd = (saved && typeof saved.cwd === 'string') ? saved.cwd : null;
+  const initCmd = (saved && typeof saved.initCmd === 'string') ? saved.initCmd : null;
 
   const term = new window.Terminal({
     fontFamily: "'Ubuntu Mono', 'Cascadia Mono', 'DejaVu Sans Mono', 'Menlo', 'Consolas', monospace",
@@ -130,6 +131,14 @@ export async function mount(container, api) {
       cwd: savedCwd || workspacePath || null,
       cols, rows,
     }));
+    if (initCmd) {
+      setTimeout(() => {
+        if (connected) {
+          ws.send(JSON.stringify({ type: 'input', data: initCmd }));
+          persist();
+        }
+      }, 500);
+    }
   });
 
   ws.addEventListener('message', ev => {
