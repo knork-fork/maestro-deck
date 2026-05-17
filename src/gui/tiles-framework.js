@@ -2074,16 +2074,22 @@ function confirmClearAll() {
 
 async function clearAll() {
   const tab = activeTab();
+  const leafIds = new Set();
+  if (tab.layoutTree) collectLeafIds(tab.layoutTree, leafIds);
+
   tab.layoutTree = null;
   state.focusedId = null;
   renderTree(tab);
   scheduleSaveLayout();
-  try {
-    await fetch(
-      `/api/workspace-tiles?path=${encodeURIComponent(state.workspacePath)}`,
-      { method: 'DELETE' }
-    );
-  } catch { /* ignore */ }
+
+  for (const id of leafIds) {
+    try {
+      await fetch(
+        `/api/tile-content?path=${encodeURIComponent(state.workspacePath)}&id=${id}`,
+        { method: 'DELETE' }
+      );
+    } catch { /* ignore */ }
+  }
 }
 
 function confirmClearProject() {
