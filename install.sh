@@ -84,7 +84,31 @@ mkdir -p "$BIN_DIR"
 chmod +x "$INSTALL_DIR/bin/maestro-deck.js"
 ln -sf "$INSTALL_DIR/bin/maestro-deck.js" "$BIN_DIR/maestro-deck"
 
-# 5. PATH guidance
+# 6. Desktop entry (Linux only)
+# macOS has no equivalent: integrating with Launchpad/Dock requires a real .app
+# bundle (CFBundleName, .icns icon, Info.plist) built via electron-builder or
+# electron-forge. Until that's done, macOS users launch via the CLI and see
+# "Electron" + default icon in the Dock.
+if [[ "$(uname)" != "Darwin" ]]; then
+  APPS_DIR="$HOME/.local/share/applications"
+  mkdir -p "$APPS_DIR"
+  cat > "$APPS_DIR/maestro-deck.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=MaestroDeck
+Comment=Flexible tiled workspace for terminals, tools, dashboards, and workflows
+Exec=$BIN_DIR/maestro-deck
+Icon=$INSTALL_DIR/icons/icon_full.png
+Terminal=false
+Categories=Development;Utility;
+StartupWMClass=MaestroDeck
+EOF
+  if command -v update-desktop-database &>/dev/null; then
+    update-desktop-database "$APPS_DIR" &>/dev/null || true
+  fi
+fi
+
+# 7. PATH guidance
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
   echo ""
   echo "Add $BIN_DIR to your PATH. For example:"

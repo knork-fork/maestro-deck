@@ -142,11 +142,13 @@ async function main() {
       const binLink = join(homedir(), '.local', 'bin', 'maestro-deck');
       const installDir = __installDir;
       const electronDir = join(homedir(), '.maestro-deck-electron');
+      const desktopFile = join(homedir(), '.local', 'share', 'applications', 'maestro-deck.desktop');
 
       console.log('This will remove:');
       if (existsSync(binLink)) console.log(`  ${binLink}  (symlink)`);
       console.log(`  ${installDir}/`);
       if (existsSync(electronDir)) console.log(`  ${electronDir}/`);
+      if (existsSync(desktopFile)) console.log(`  ${desktopFile}`);
 
       const answer = await prompt('\nProceed? [y/N] ');
       if (answer.toLowerCase() !== 'y') { console.log('Aborted.'); break; }
@@ -154,6 +156,7 @@ async function main() {
       if (existsSync(binLink)) rmSync(binLink, { force: true });
       rmSync(installDir, { recursive: true, force: true });
       if (existsSync(electronDir)) rmSync(electronDir, { recursive: true, force: true });
+      if (existsSync(desktopFile)) rmSync(desktopFile, { force: true });
 
       console.log('maestro-deck uninstalled.');
       break;

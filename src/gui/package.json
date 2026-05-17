@@ -1,5 +1,6 @@
 {
   "name": "maestro-deck-gui",
+  "productName": "MaestroDeck",
   "private": true,
   "type": "module",
   "main": "electron-main.cjs"
