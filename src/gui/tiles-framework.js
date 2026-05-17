@@ -1107,6 +1107,88 @@ function replaceNode(tab, parent, side, newNode) {
   }
 }
 
+function buildSubtreeFromLayout(spec, seedJobs) {
+  if (spec.type === 'leaf') {
+    const id = generateId();
+    if (spec.initCmd) seedJobs.push({ id, initCmd: spec.initCmd });
+    return { type: 'leaf', id, tileType: spec.tileType, notifyState: null };
+  }
+  return {
+    type: 'split',
+    dir: spec.dir,
+    ratio: spec.ratio,
+    a: buildSubtreeFromLayout(spec.a, seedJobs),
+    b: buildSubtreeFromLayout(spec.b, seedJobs),
+  };
+}
+
+function firstLeafId(node) {
+  if (!node) return null;
+  if (node.type === 'leaf') return node.id;
+  return firstLeafId(node.a) || firstLeafId(node.b);
+}
+
+// When inserting a multi-tile subtree (e.g. from a plugin layout) on an edge,
+// align it with any parallel structure that already exists at the drop site.
+// Example: dropping a vertical {terminal, notepad} pair on the right edge of a
+// tile that's already the top of a vertical {terminal, notepad} should produce
+// two columns side-by-side — not a nested split inside one column.
+function findInsertAnchor(tab, targetLeafId, edge, subtreeNode) {
+  const tree = tab.layoutTree;
+  if (!tree) return null;
+  const path = getPathToLeaf(tree, targetLeafId);
+  if (path === null) return null;
+
+  let leafNode = tree;
+  for (const step of path) leafNode = step.splitNode[step.side];
+
+  const newOuterDir = (edge === 'top' || edge === 'bottom') ? 'v' : 'h';
+  const shouldPromote = subtreeNode.type === 'split'
+    && newOuterDir !== subtreeNode.dir
+    && path.length > 0;
+
+  if (!shouldPromote) {
+    const last = path.length > 0 ? path[path.length - 1] : null;
+    return {
+      anchorNode: leafNode,
+      parent: last ? last.splitNode : null,
+      side: last ? last.side : null,
+    };
+  }
+
+  let i = path.length - 1;
+  while (i >= 0 && path[i].splitNode.dir === subtreeNode.dir) i--;
+
+  if (i === -1) {
+    return { anchorNode: tab.layoutTree, parent: null, side: null };
+  }
+  return {
+    anchorNode: path[i + 1].splitNode,
+    parent: path[i].splitNode,
+    side: path[i].side,
+  };
+}
+
+function insertSubtree(tab, targetLeafId, edge, subtreeNode) {
+  if (!tab.layoutTree) {
+    tab.layoutTree = subtreeNode;
+    return;
+  }
+  const anchor = findInsertAnchor(tab, targetLeafId, edge, subtreeNode);
+  if (!anchor) return;
+  const { anchorNode, parent, side } = anchor;
+  const dir = (edge === 'top' || edge === 'bottom') ? 'v' : 'h';
+  const newOnA = (edge === 'top' || edge === 'left');
+  const splitNode = {
+    type: 'split',
+    dir,
+    ratio: 0.5,
+    a: newOnA ? subtreeNode : anchorNode,
+    b: newOnA ? anchorNode : subtreeNode,
+  };
+  replaceNode(tab, parent, side, splitNode);
+}
+
 function insertTile(tab, targetId, edge, newLeaf) {
   if (!tab.layoutTree) {
     tab.layoutTree = newLeaf;
@@ -1529,43 +1611,54 @@ function initCanvasDnD(tab) {
     hideDropPreview(canvas);
     if (!target) return;
 
-    let tileType = tileName;
-    let initCmd = null;
+    let rootNode = null;
+    let focusId = null;
+    const seedJobs = [];
 
     if (pluginName) {
       const plugin = state.plugins.find(p => p.name === pluginName);
       if (!plugin) return;
-      tileType = plugin.tileType;
-      initCmd = plugin.initCmd || null;
+      if (plugin.layout) {
+        rootNode = buildSubtreeFromLayout(plugin.layout, seedJobs);
+        focusId = firstLeafId(rootNode);
+      } else {
+        const id = generateId();
+        rootNode = { type: 'leaf', id, tileType: plugin.tileType, notifyState: null };
+        focusId = id;
+        if (plugin.initCmd) seedJobs.push({ id, initCmd: plugin.initCmd });
+      }
+    } else {
+      const id = generateId();
+      rootNode = { type: 'leaf', id, tileType: tileName, notifyState: null };
+      focusId = id;
     }
 
-    const newId = generateId();
-    const newLeaf = { type: 'leaf', id: newId, tileType, notifyState: null };
-
-    if (initCmd) {
+    if (seedJobs.length) {
       try {
-        await fetch(
-          `/api/tile-content?path=${encodeURIComponent(state.workspacePath)}&id=${newId}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: { initCmd } }),
-          }
-        );
+        await Promise.all(seedJobs.map(({ id, initCmd }) =>
+          fetch(
+            `/api/tile-content?path=${encodeURIComponent(state.workspacePath)}&id=${id}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: { initCmd } }),
+            }
+          )
+        ));
       } catch (err) {
         console.error('[plugins] Failed to pre-seed initCmd:', err);
       }
     }
 
     if (target.edge === 'root') {
-      tab.layoutTree = newLeaf;
+      tab.layoutTree = rootNode;
     } else if (target.edge === 'center') {
-      insertTile(tab, target.leafId, 'left', newLeaf);
+      insertSubtree(tab, target.leafId, 'left', rootNode);
     } else {
-      insertTile(tab, target.leafId, target.edge, newLeaf);
+      insertSubtree(tab, target.leafId, target.edge, rootNode);
     }
     renderTree(tab);
-    focusTile(newLeaf.id);
+    if (focusId) focusTile(focusId);
     scheduleSaveLayout();
   });
 }

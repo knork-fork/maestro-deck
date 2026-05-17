@@ -1,0 +1,12 @@
+{
+  "label": "Claude Plan + Notepad",
+  "description": "Claude in plan mode with a notepad below",
+  "icon": "<svg viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round'><defs><clipPath id='cpnp-tl'><polygon points='0,0 16,0 0,16'/></clipPath><clipPath id='cpnp-br'><polygon points='16,0 16,16 0,16'/></clipPath></defs><g clip-path='url(#cpnp-tl)' stroke-width='2'><line x1='8' y1='2' x2='8' y2='14'/><line x1='13.2' y1='5' x2='2.8' y2='11'/><line x1='2.8' y1='5' x2='13.2' y2='11'/></g><g clip-path='url(#cpnp-br)' stroke-width='1.4'><path d='M 6 4 L 11.5 4 L 13 5.5 L 13 13 L 6 13 Z'/><line x1='8' y1='8' x2='12' y2='8'/><line x1='8' y1='10' x2='12' y2='10'/><line x1='8' y1='12' x2='11' y2='12'/></g></svg>",
+  "layout": {
+    "type": "split",
+    "dir": "v",
+    "ratio": 0.667,
+    "a": { "type": "leaf", "tileType": "terminal", "initCmd": "claude --permission-mode plan\n" },
+    "b": { "type": "leaf", "tileType": "notepad" }
+  }
+}

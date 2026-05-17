@@ -128,7 +128,23 @@ function loadTiles() {
   return map;
 }
 
-function loadPlugins() {
+function validateLayoutNode(node, tiles) {
+  if (!node || typeof node !== 'object') return 'layout node is not an object';
+  if (node.type === 'leaf') {
+    if (typeof node.tileType !== 'string' || !node.tileType) return 'leaf missing tileType';
+    if (!tiles.has(node.tileType)) return `leaf references unknown tileType "${node.tileType}"`;
+    if (node.initCmd != null && typeof node.initCmd !== 'string') return 'leaf initCmd must be a string';
+    return null;
+  }
+  if (node.type === 'split') {
+    if (node.dir !== 'h' && node.dir !== 'v') return 'split dir must be "h" or "v"';
+    if (typeof node.ratio !== 'number' || !(node.ratio > 0 && node.ratio < 1)) return 'split ratio must be a number in (0,1)';
+    return validateLayoutNode(node.a, tiles) || validateLayoutNode(node.b, tiles);
+  }
+  return `node type must be "leaf" or "split" (got ${JSON.stringify(node.type)})`;
+}
+
+function loadPlugins(tiles) {
   const map = new Map();
   const sources = [
     { dir: APP_PLUGINS_DIR, source: 'app' },
@@ -159,10 +175,22 @@ function loadPlugins() {
       }
       if (typeof manifest.label !== 'string' || !manifest.label ||
           typeof manifest.description !== 'string' ||
-          typeof manifest.icon !== 'string' || !manifest.icon ||
-          typeof manifest.tileType !== 'string' || !manifest.tileType) {
-        console.warn(`[plugins] Skipping ${name}: plugin.json missing required fields (label, description, icon, tileType)`);
+          typeof manifest.icon !== 'string' || !manifest.icon) {
+        console.warn(`[plugins] Skipping ${name}: plugin.json missing required fields (label, description, icon)`);
         continue;
+      }
+      const hasTileType = typeof manifest.tileType === 'string' && manifest.tileType;
+      const hasLayout = manifest.layout != null;
+      if (!hasTileType && !hasLayout) {
+        console.warn(`[plugins] Skipping ${name}: plugin.json must have either "tileType" or "layout"`);
+        continue;
+      }
+      if (hasLayout) {
+        const err = validateLayoutNode(manifest.layout, tiles);
+        if (err) {
+          console.warn(`[plugins] Skipping ${name}: invalid layout — ${err}`);
+          continue;
+        }
       }
 
       map.set(name, { source, manifest });
@@ -408,7 +436,7 @@ export async function startServer() {
   const iconPng = existsSync(iconPngPath) ? readFileSync(iconPngPath) : null;
   const port = await findPort();
   let tiles = loadTiles();
-  let plugins = loadPlugins();
+  let plugins = loadPlugins(tiles);
 
   const tileServeRe = /^\/tiles\/([a-z][a-z0-9-]*)\/((?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+)$/;
 
@@ -504,7 +532,7 @@ export async function startServer() {
 
       } else if (url.pathname === '/api/reload-defs' && req.method === 'POST') {
         tiles = loadTiles();
-        plugins = loadPlugins();
+        plugins = loadPlugins(tiles);
         json({ ok: true, tiles: tiles.size, plugins: plugins.size });
 
       } else if (url.pathname === '/api/tiles' && req.method === 'GET') {
@@ -523,8 +551,9 @@ export async function startServer() {
           label:       p.manifest.label,
           description: p.manifest.description,
           icon:        p.manifest.icon,
-          tileType:    p.manifest.tileType,
+          tileType:    p.manifest.tileType ?? null,
           initCmd:     p.manifest.initCmd ?? null,
+          layout:      p.manifest.layout ?? null,
           source:      p.source,
         })));
 
