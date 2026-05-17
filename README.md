@@ -7,7 +7,7 @@ Flexible tiled workspace for terminals, tools, dashboards, and workflows.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/knork-fork/maestro-deck/v0.1.2/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/knork-fork/maestro-deck/v0.1.3/install.sh | bash
 ```
 
 > Requires Node.js 18+ and git.
