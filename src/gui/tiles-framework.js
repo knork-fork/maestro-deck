@@ -930,6 +930,7 @@ function switchToTab(index) {
   for (const tab of state.tabs) tab.canvasEl.classList.add('hidden');
   state.activeTabIndex = index;
   state.tabs[index].canvasEl.classList.remove('hidden');
+  renderTree(state.tabs[index]);
   buildTabsList();
   scheduleSaveLayout();
 }
