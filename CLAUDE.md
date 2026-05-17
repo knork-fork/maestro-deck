@@ -19,20 +19,9 @@ Electron is installed in `~/.maestro-deck-electron/` rather than `~/.maestro-dec
 ### --no-sandbox
 Linux systems often require `--no-sandbox` because the `chrome-sandbox` binary needs root-owned setuid permissions. The CLI passes `--no-sandbox` when spawning Electron.
 
-## install.sh
-
-- Runs `npm install --omit=dev` in the project dir (currently no production deps).
-- Installs Electron once into `~/.maestro-deck-electron/` — skipped if binary already exists to avoid slow re-runs on update.
-- Re-run install.sh after deleting `~/.maestro-deck-electron/` to upgrade Electron.
-
 ## Local storage
 
 All runtime data (e.g. `workspaces.json`) lives in `~/.maestro-deck/resources/`. This subdirectory is gitignored so it doesn't appear in diffs when `dev.sh --local` symlinks `~/.maestro-deck` → repo.
-
-## dev.sh
-
-- `--local`: symlinks `~/.maestro-deck` → repo, runs `npm install`, installs Electron if missing, symlinks binary.
-- `--release`: removes dev setup and re-runs install.sh from the release repo.
 
 ## Testing the GUI directly
 
