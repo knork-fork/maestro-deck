@@ -662,7 +662,7 @@ function buildSidebar() {
   document.getElementById('sb-clear-all')?.addEventListener('click', confirmClearAll);
 
   renderTileList('');
-  if (state.activeTab === 'plugins') renderPluginList('');
+  renderPluginList('');
 }
 
 function renderTileList(filter) {
@@ -2401,7 +2401,9 @@ export async function init(opts) {
   window.addEventListener('md-clear-all-projects', confirmClearAllProjects);
   window.addEventListener('md-reload-defs', async () => {
     try {
-      await fetch('/api/reload-defs', { method: 'POST' });
+      const res = await fetch('/api/reload-defs', { method: 'POST' });
+      const data = await res.json();
+      console.log(`[reload] tiles: ${data.tiles}, plugins: ${data.plugins}`);
     } catch (e) { console.error('[reload]', e); }
     await loadTileDefinitions();
     buildSidebar();
