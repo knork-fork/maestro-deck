@@ -1162,8 +1162,9 @@ function findInsertAnchor(tab, targetLeafId, edge, subtreeNode) {
   if (i === -1) {
     return { anchorNode: tab.layoutTree, parent: null, side: null };
   }
+  const anchorNode = (i + 1 < path.length) ? path[i + 1].splitNode : leafNode;
   return {
-    anchorNode: path[i + 1].splitNode,
+    anchorNode,
     parent: path[i].splitNode,
     side: path[i].side,
   };
