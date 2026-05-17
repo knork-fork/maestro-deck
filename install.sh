@@ -92,12 +92,16 @@ ln -sf "$INSTALL_DIR/bin/maestro-deck.js" "$BIN_DIR/maestro-deck"
 if [[ "$(uname)" != "Darwin" ]]; then
   APPS_DIR="$HOME/.local/share/applications"
   mkdir -p "$APPS_DIR"
+  # GNOME/KDE launch .desktop entries with a minimal PATH that may not contain
+  # node (nvm, fnm, asdf, etc.). Bake the absolute node path into Exec so the
+  # launcher works regardless of inherited PATH.
+  NODE_BIN="$(command -v node)"
   cat > "$APPS_DIR/maestro-deck.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=MaestroDeck
 Comment=Flexible tiled workspace for terminals, tools, dashboards, and workflows
-Exec=$BIN_DIR/maestro-deck
+Exec=$NODE_BIN $INSTALL_DIR/bin/maestro-deck.js
 Icon=$INSTALL_DIR/icons/icon_full.png
 Terminal=false
 Categories=Development;Utility;
