@@ -16,6 +16,11 @@ if ! command -v node &>/dev/null; then
   fi
   exit 1
 fi
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+if [ "$NODE_MAJOR" -lt 18 ]; then
+  echo "Error: Node.js 18 or newer is required (found $(node -v))."
+  exit 1
+fi
 if ! command -v git &>/dev/null; then
   echo "Error: git is required."
   if [[ "$(uname)" == "Darwin" ]]; then
