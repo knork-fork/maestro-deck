@@ -110,6 +110,7 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
+      webviewTag: true,
       preload: preloadPath,
     },
     show: false,

@@ -2,6 +2,9 @@
 
 import { openPreferencesModal } from '/preferences-modal.js';
 
+function shieldWebviews()   { document.querySelectorAll('webview').forEach(v => v.style.pointerEvents = 'none'); }
+function unshieldWebviews() { document.querySelectorAll('webview').forEach(v => v.style.pointerEvents = ''); }
+
 const SIDEBAR_DEFAULT_WIDTH = 280;
 const TABS_SIDEBAR_DEFAULT_WIDTH = 200;
 const MIN_TILE_W = 150;
@@ -582,6 +585,7 @@ function initSidebar(prefs) {
     const startX = e.clientX;
     const startWidth = state.sidebarWidth;
     divider.classList.add('dragging');
+    shieldWebviews();
     sidebar.style.transition = 'none';
 
     function onMove(e) {
@@ -589,6 +593,7 @@ function initSidebar(prefs) {
       sidebar.style.width = `${state.sidebarWidth}px`;
     }
     function onUp() {
+      unshieldWebviews();
       divider.classList.remove('dragging');
       sidebar.style.transition = '';
       document.removeEventListener('mousemove', onMove);
@@ -740,7 +745,9 @@ function renderPluginList(filter) {
     el.addEventListener('dragstart', e => {
       e.dataTransfer.setData('plugin-name', plugin.name);
       e.dataTransfer.effectAllowed = 'copy';
+      shieldWebviews();
     });
+    el.addEventListener('dragend', () => unshieldWebviews());
 
     panel.appendChild(el);
   }
@@ -770,7 +777,9 @@ function buildTileListItem(tile) {
   el.addEventListener('dragstart', e => {
     e.dataTransfer.setData('tile-name', tile.name);
     e.dataTransfer.effectAllowed = 'copy';
+    shieldWebviews();
   });
+  el.addEventListener('dragend', () => unshieldWebviews());
 
   return el;
 }
@@ -825,6 +834,7 @@ function initTabsSidebar(prefs) {
     const startX = e.clientX;
     const startWidth = state.tabsSidebarWidth;
     divider.classList.add('dragging');
+    shieldWebviews();
     sidebar.style.transition = 'none';
 
     function onMove(e) {
@@ -832,6 +842,7 @@ function initTabsSidebar(prefs) {
       sidebar.style.width = `${state.tabsSidebarWidth}px`;
     }
     function onUp() {
+      unshieldWebviews();
       divider.classList.remove('dragging');
       sidebar.style.transition = '';
       document.removeEventListener('mousemove', onMove);
@@ -1478,6 +1489,7 @@ function initSplitterDrag(splitterEl, splitNode, paneAEl, splitContainerEl) {
     e.preventDefault();
     e.stopPropagation();
     splitterEl.classList.add('dragging');
+    shieldWebviews();
 
     const rect = splitContainerEl.getBoundingClientRect();
     const isH = splitNode.dir === 'h';
@@ -1503,6 +1515,7 @@ function initSplitterDrag(splitterEl, splitNode, paneAEl, splitContainerEl) {
       if (paneB) paneB.style.flex = `${1 - r} 0 0`;
     }
     function onUp() {
+      unshieldWebviews();
       splitterEl.classList.remove('dragging');
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);

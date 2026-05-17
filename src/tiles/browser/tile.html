@@ -1,0 +1,94 @@
+<style>
+  .browser-tile-wrap {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+    overflow: hidden;
+  }
+  .browser-tile-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: #2c2c2c;
+    border-bottom: 1px solid #3a3a3a;
+    flex-shrink: 0;
+  }
+  .browser-tile-toolbar button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #aaa;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .browser-tile-toolbar button:hover {
+    background: #3a3a3a;
+    color: #eee;
+  }
+  .browser-tile-toolbar button:disabled {
+    color: #555;
+    cursor: default;
+    background: none;
+  }
+  .browser-tile-toolbar button svg {
+    width: 14px;
+    height: 14px;
+  }
+  .browser-tile-urlbar {
+    flex: 1;
+    height: 26px;
+    background: #1a1a1a;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    color: #eee;
+    font-size: 12px;
+    padding: 0 8px;
+    outline: none;
+    font-family: system-ui, sans-serif;
+  }
+  .browser-tile-urlbar:focus {
+    border-color: #555;
+    background: #111;
+  }
+  webview {
+    flex: 1;
+    width: 100%;
+    display: flex;
+  }
+</style>
+<div class="browser-tile-wrap">
+  <div class="browser-tile-toolbar">
+    <button class="browser-btn-back" title="Back" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+    <button class="browser-btn-fwd" title="Forward" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+    </button>
+    <button class="browser-btn-reload" title="Reload">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+      </svg>
+    </button>
+    <input class="browser-tile-urlbar" type="text" placeholder="Enter URL or search…" spellcheck="false" autocomplete="off" />
+  </div>
+  <webview
+    class="browser-tile-webview"
+    src="about:blank"
+    partition="persist:browser-tile"
+    allowpopups
+  ></webview>
+</div>
