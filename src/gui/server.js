@@ -7,6 +7,9 @@ import { exec, execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { WebSocketServer } from 'ws';
 import * as pty from 'node-pty';
+import { Agent } from 'undici';
+
+const proxyAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const CONFIG_DIR = join(homedir(), '.maestro-deck');
@@ -620,6 +623,27 @@ export async function startServer() {
           }
         }
         json({ ok: true });
+
+      } else if (url.pathname === '/api/http-proxy' && req.method === 'POST') {
+        const { method: reqMethod, url: reqUrl, headers: reqHeaders, body: reqBody } = JSON.parse(await readBody(req));
+        let parsed;
+        try { parsed = new URL(reqUrl); } catch { json({ ok: false, error: 'Invalid URL', durationMs: 0 }); return; }
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          json({ ok: false, error: `Protocol not allowed: ${parsed.protocol}`, durationMs: 0 }); return;
+        }
+        const t0 = performance.now();
+        try {
+          const fetchOpts = { method: reqMethod, headers: reqHeaders ?? {}, redirect: 'follow', dispatcher: proxyAgent };
+          if (reqBody != null && reqMethod !== 'GET' && reqMethod !== 'HEAD') fetchOpts.body = reqBody;
+          const proxyRes = await fetch(reqUrl, fetchOpts);
+          const body = await proxyRes.text();
+          const durationMs = Math.round(performance.now() - t0);
+          const respHeaders = {};
+          proxyRes.headers.forEach((v, k) => { respHeaders[k] = v; });
+          json({ ok: true, status: proxyRes.status, statusText: proxyRes.statusText, headers: respHeaders, body, durationMs, finalUrl: proxyRes.url });
+        } catch (e) {
+          json({ ok: false, error: e.message, durationMs: Math.round(performance.now() - t0) });
+        }
 
       } else if (url.pathname === '/api/tile-content' && req.method === 'GET') {
         const p = url.searchParams.get('path');

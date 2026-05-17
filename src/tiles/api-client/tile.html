@@ -1,0 +1,352 @@
+<style>
+  .api-client-wrap {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #2c2c2c;
+    color: #eeeeec;
+    font-family: 'Cascadia Code', 'Fira Code', 'Ubuntu Mono', 'DejaVu Sans Mono', monospace;
+    font-size: 12px;
+  }
+
+  /* ── Request bar ── */
+  .ac-request-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #3a3a3a;
+    flex-shrink: 0;
+  }
+  .ac-method-select {
+    background: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #eeeeec;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 6px;
+    cursor: pointer;
+    outline: none;
+  }
+  .ac-method-select:focus { border-color: #666; }
+  .ac-method-select.m-GET    { color: #73c991; }
+  .ac-method-select.m-POST   { color: #e9c46a; }
+  .ac-method-select.m-PUT    { color: #f4a261; }
+  .ac-method-select.m-PATCH  { color: #a8dadc; }
+  .ac-method-select.m-DELETE { color: #e76f51; }
+  .ac-method-select.m-HEAD   { color: #aaaaaa; }
+  .ac-method-select.m-OPTIONS { color: #aaaaaa; }
+  .ac-url-input {
+    flex: 1;
+    background: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #eeeeec;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 8px;
+    outline: none;
+    min-width: 0;
+  }
+  .ac-url-input:focus { border-color: #666; }
+  .ac-url-input::placeholder { color: #555; }
+  .ac-send-btn {
+    background: #3c7a5a;
+    border: none;
+    border-radius: 4px;
+    color: #eeeeec;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .ac-send-btn:hover { background: #4a9470; }
+  .ac-send-btn:disabled { background: #3a3a3a; color: #666; cursor: default; }
+
+  /* ── Tabs ── */
+  .ac-tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 8px 0;
+    border-bottom: 1px solid #3a3a3a;
+    flex-shrink: 0;
+  }
+  .ac-tab-btn {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #888;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 10px 5px;
+    cursor: pointer;
+    margin-bottom: -1px;
+  }
+  .ac-tab-btn:hover { color: #ccc; }
+  .ac-tab-btn.active { color: #eeeeec; border-bottom-color: #73c991; }
+
+  /* ── Request panels ── */
+  .ac-request-panels {
+    height: 38%;
+    min-height: 100px;
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid #3a3a3a;
+  }
+  .ac-panel {
+    display: none;
+    flex: 1;
+    overflow: hidden;
+    flex-direction: column;
+  }
+  .ac-panel.active { display: flex; }
+
+  /* ── Key-value rows ── */
+  .ac-kv-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .ac-kv-list::-webkit-scrollbar { width: 6px; }
+  .ac-kv-list::-webkit-scrollbar-track { background: transparent; }
+  .ac-kv-list::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+  .ac-kv-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+  }
+  .ac-kv-check {
+    flex-shrink: 0;
+    accent-color: #73c991;
+    cursor: pointer;
+  }
+  .ac-kv-key, .ac-kv-val {
+    flex: 1;
+    background: #1e1e1e;
+    border: 1px solid #383838;
+    border-radius: 3px;
+    color: #eeeeec;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 3px 6px;
+    outline: none;
+    min-width: 0;
+  }
+  .ac-kv-key:focus, .ac-kv-val:focus { border-color: #555; }
+  .ac-kv-key::placeholder, .ac-kv-val::placeholder { color: #4a4a4a; }
+  .ac-kv-del {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .ac-kv-del:hover { color: #e76f51; }
+
+  /* ── Body panel ── */
+  .ac-body-mode-bar {
+    display: flex;
+    gap: 4px;
+    padding: 5px 8px 4px;
+    flex-shrink: 0;
+    border-bottom: 1px solid #333;
+  }
+  .ac-body-mode-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    color: #888;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+  .ac-body-mode-btn:hover { color: #ccc; }
+  .ac-body-mode-btn.active { color: #eeeeec; border-color: #555; background: #333; }
+  .ac-body-none-msg {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    font-size: 11px;
+  }
+  .ac-raw-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    flex-shrink: 0;
+  }
+  .ac-raw-label { color: #888; font-size: 11px; }
+  .ac-raw-pretty-btn {
+    background: none;
+    border: 1px solid #444;
+    border-radius: 3px;
+    color: #888;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 1px 7px;
+    cursor: pointer;
+  }
+  .ac-raw-pretty-btn:hover { color: #ccc; border-color: #666; }
+  .ac-raw-textarea {
+    flex: 1;
+    background: #1e1e1e;
+    border: none;
+    color: #eeeeec;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.5;
+    padding: 6px 10px;
+    resize: none;
+    outline: none;
+    tab-size: 2;
+  }
+  .ac-raw-textarea::placeholder { color: #4a4a4a; }
+  .ac-raw-textarea::-webkit-scrollbar { width: 6px; }
+  .ac-raw-textarea::-webkit-scrollbar-track { background: transparent; }
+  .ac-raw-textarea::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+  /* ── Response area ── */
+  .ac-response {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .ac-response-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-bottom: 1px solid #3a3a3a;
+    flex-shrink: 0;
+  }
+  .ac-status-badge {
+    font-weight: 700;
+    font-size: 12px;
+    border-radius: 3px;
+    padding: 1px 6px;
+  }
+  .ac-status-badge.s2xx { color: #73c991; }
+  .ac-status-badge.s3xx { color: #a8dadc; }
+  .ac-status-badge.s4xx { color: #e9c46a; }
+  .ac-status-badge.s5xx { color: #e76f51; }
+  .ac-status-badge.serr { color: #e76f51; }
+  .ac-meta { color: #666; font-size: 11px; }
+  .ac-pretty-label {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #888;
+    font-size: 11px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .ac-pretty-label input { accent-color: #73c991; cursor: pointer; }
+  .ac-response-body {
+    flex: 1;
+    overflow: auto;
+    padding: 8px 10px;
+    min-height: 0;
+  }
+  .ac-response-body::-webkit-scrollbar { width: 6px; height: 6px; }
+  .ac-response-body::-webkit-scrollbar-track { background: transparent; }
+  .ac-response-body::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+  .ac-response-body pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #eeeeec;
+  }
+  .ac-response-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #444;
+    font-size: 12px;
+  }
+  .ac-error-text { color: #e76f51; }
+</style>
+
+<div class="api-client-wrap">
+  <!-- request bar -->
+  <div class="ac-request-bar">
+    <select class="ac-method-select m-GET">
+      <option>GET</option>
+      <option>POST</option>
+      <option>PUT</option>
+      <option>PATCH</option>
+      <option>DELETE</option>
+      <option>HEAD</option>
+      <option>OPTIONS</option>
+    </select>
+    <input class="ac-url-input" type="text" placeholder="https://example.com/api" spellcheck="false" autocorrect="off" autocapitalize="off" />
+    <button class="ac-send-btn">Send</button>
+  </div>
+
+  <!-- tabs -->
+  <div class="ac-tabs">
+    <button class="ac-tab-btn active" data-tab="params">Params</button>
+    <button class="ac-tab-btn" data-tab="headers">Headers</button>
+    <button class="ac-tab-btn" data-tab="body">Body</button>
+  </div>
+
+  <!-- request panels -->
+  <div class="ac-request-panels">
+    <!-- params -->
+    <div class="ac-panel active" data-panel="params">
+      <div class="ac-kv-list" data-kv="params"></div>
+    </div>
+    <!-- headers -->
+    <div class="ac-panel" data-panel="headers">
+      <div class="ac-kv-list" data-kv="headers"></div>
+    </div>
+    <!-- body -->
+    <div class="ac-panel" data-panel="body">
+      <div class="ac-body-mode-bar">
+        <button class="ac-body-mode-btn active" data-mode="none">none</button>
+        <button class="ac-body-mode-btn" data-mode="form-data">form-data</button>
+        <button class="ac-body-mode-btn" data-mode="raw">raw</button>
+      </div>
+      <div class="ac-body-content" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;"></div>
+    </div>
+  </div>
+
+  <!-- response -->
+  <div class="ac-response">
+    <div class="ac-response-header" style="display:none;">
+      <span class="ac-status-badge"></span>
+      <span class="ac-meta ac-meta-time"></span>
+      <span class="ac-meta ac-meta-size"></span>
+      <label class="ac-pretty-label">
+        <input type="checkbox" class="ac-pretty-check" checked /> Pretty JSON
+      </label>
+    </div>
+    <div class="ac-response-body">
+      <div class="ac-response-placeholder">Send a request to see the response</div>
+    </div>
+  </div>
+</div>
