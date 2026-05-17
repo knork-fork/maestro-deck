@@ -2306,4 +2306,11 @@ export async function init(opts) {
   window.addEventListener('md-open-preferences', openPreferencesModalWithState);
   window.addEventListener('md-clear-project', confirmClearProject);
   window.addEventListener('md-clear-all-projects', confirmClearAllProjects);
+  window.addEventListener('md-reload-defs', async () => {
+    try {
+      await fetch('/api/reload-defs', { method: 'POST' });
+    } catch (e) { console.error('[reload]', e); }
+    await loadTileDefinitions();
+    buildSidebar();
+  });
 }

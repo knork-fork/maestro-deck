@@ -407,8 +407,8 @@ export async function startServer() {
   const iconIco = existsSync(iconIcoPath) ? readFileSync(iconIcoPath) : null;
   const iconPng = existsSync(iconPngPath) ? readFileSync(iconPngPath) : null;
   const port = await findPort();
-  const tiles = loadTiles();
-  const plugins = loadPlugins();
+  let tiles = loadTiles();
+  let plugins = loadPlugins();
 
   const tileServeRe = /^\/tiles\/([a-z][a-z0-9-]*)\/((?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+)$/;
 
@@ -501,6 +501,11 @@ export async function startServer() {
         const existing = getPreferences() ?? {};
         savePreferencesData({ ...existing, ...incoming });
         json({ ok: true });
+
+      } else if (url.pathname === '/api/reload-defs' && req.method === 'POST') {
+        tiles = loadTiles();
+        plugins = loadPlugins();
+        json({ ok: true, tiles: tiles.size, plugins: plugins.size });
 
       } else if (url.pathname === '/api/tiles' && req.method === 'GET') {
         json([...tiles.entries()].map(([name, t]) => ({

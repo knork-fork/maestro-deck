@@ -182,7 +182,9 @@ const MENUS = [
   },
   {
     label: 'View',
-    items: [],
+    items: [
+      { label: 'Rescan Tiles & Plugins', action: () => window.dispatchEvent(new CustomEvent('md-reload-defs')) },
+    ],
   },
   {
     label: 'Help',
