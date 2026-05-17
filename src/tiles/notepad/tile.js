@@ -10,6 +10,16 @@ export async function mount(container, api) {
     api.saveContent(ta.value);
   });
 
+  // Keep padding-bottom equal to the visible height so content can always be
+  // scrolled upward (VS Code-style "scroll beyond last line").
+  const LINE_HEIGHT = 13 * 1.6;
+  const updatePadding = () => {
+    ta.style.paddingBottom = Math.max(0, ta.clientHeight - LINE_HEIGHT) + 'px';
+  };
+  const ro = new ResizeObserver(updatePadding);
+  ro.observe(ta);
+  updatePadding();
+
   // Drag source: tag outgoing drags so drop targets can identify them.
   ta.addEventListener('dragstart', e => {
     const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd);
