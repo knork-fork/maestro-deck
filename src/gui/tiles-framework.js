@@ -260,6 +260,9 @@ function injectStyles() {
     }
     .sb-tile-item:hover { background: #181818; }
     .sb-tile-item:active { cursor: grabbing; }
+    .sb-tile-item.disabled { opacity: 0.4; cursor: not-allowed; }
+    .sb-tile-item.disabled:hover { background: transparent; }
+    .sb-tile-item.disabled:active { cursor: not-allowed; }
 
     .sb-tile-icon {
       flex-shrink: 0;
@@ -723,10 +726,12 @@ function renderPluginList(filter) {
 
   for (const plugin of filtered) {
     const el = document.createElement('div');
-    el.className = 'sb-tile-item';
-    el.draggable = true;
+    el.className = 'sb-tile-item' + (plugin.disabled ? ' disabled' : '');
+    el.draggable = !plugin.disabled;
     el.dataset.pluginName = plugin.name;
-    el.title = plugin.description;
+    el.title = plugin.disabled
+      ? (plugin.disabledReason ? `${plugin.disabledReason} — ${plugin.description}` : plugin.description)
+      : plugin.description;
 
     const iconEl = document.createElement('span');
     iconEl.className = 'sb-tile-icon';
@@ -736,18 +741,20 @@ function renderPluginList(filter) {
     infoEl.className = 'sb-tile-info';
     infoEl.innerHTML = `
       <div class="sb-tile-label">${escapeHtml(plugin.label)}</div>
-      <div class="sb-tile-desc">${escapeHtml(plugin.description)}</div>
+      <div class="sb-tile-desc">${escapeHtml(plugin.disabled && plugin.disabledReason ? plugin.disabledReason : plugin.description)}</div>
     `;
 
     el.appendChild(iconEl);
     el.appendChild(infoEl);
 
-    el.addEventListener('dragstart', e => {
-      e.dataTransfer.setData('plugin-name', plugin.name);
-      e.dataTransfer.effectAllowed = 'copy';
-      shieldWebviews();
-    });
-    el.addEventListener('dragend', () => unshieldWebviews());
+    if (!plugin.disabled) {
+      el.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('plugin-name', plugin.name);
+        e.dataTransfer.effectAllowed = 'copy';
+        shieldWebviews();
+      });
+      el.addEventListener('dragend', () => unshieldWebviews());
+    }
 
     panel.appendChild(el);
   }

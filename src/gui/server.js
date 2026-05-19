@@ -3,7 +3,7 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSy
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir, platform } from 'os';
-import { exec, execFileSync } from 'child_process';
+import { exec, execFileSync, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { WebSocketServer } from 'ws';
 import * as pty from 'node-pty';
@@ -196,7 +196,22 @@ function loadPlugins(tiles) {
         }
       }
 
-      map.set(name, { source, manifest });
+      let disabled = false;
+      let disabledReason = null;
+      if (typeof manifest.availabilityCheck === 'string' && manifest.availabilityCheck) {
+        try {
+          const r = spawnSync('bash', ['-lc', manifest.availabilityCheck], { encoding: 'utf8', timeout: 5000 });
+          if (r.status !== 0 || !(r.stdout && r.stdout.trim())) {
+            disabled = true;
+            disabledReason = manifest.disabledReason || 'Requirement check failed';
+          }
+        } catch {
+          disabled = true;
+          disabledReason = manifest.disabledReason || 'Requirement check failed';
+        }
+      }
+
+      map.set(name, { source, manifest, disabled, disabledReason });
     }
   }
 
@@ -558,6 +573,8 @@ export async function startServer() {
           initCmd:     p.manifest.initCmd ?? null,
           layout:      p.manifest.layout ?? null,
           source:      p.source,
+          disabled:       p.disabled,
+          disabledReason: p.disabledReason,
         })));
 
       } else if (tileServeRe.test(url.pathname) && req.method === 'GET') {

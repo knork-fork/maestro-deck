@@ -34,6 +34,8 @@ Every plugin folder must contain:
 - `tileType` — required (unless `layout` is set). Must name an existing tile (e.g. `"terminal"`). The dropped canvas leaf uses this tile type.
 - `initCmd` — optional string. If set, it is sent as input to the tile immediately after its shell spawns (500 ms delay). Intended for tiles that accept terminal input (e.g. the `terminal` tile). Include a trailing `\n` to submit the command.
 - `layout` — optional. If set, the drop creates a pre-arranged subtree of multiple tiles instead of a single tile. Mutually exclusive with `tileType`: provide one or the other. See below.
+- `availabilityCheck` — optional shell command (run via `bash -lc`). Evaluated at plugin load. If the command exits non-zero or prints no stdout, the plugin is rendered grayed out in the sidebar and cannot be dragged. Use for plugins that depend on an external CLI being installed.
+- `disabledReason` — optional string shown in the sidebar (replacing the description) when `availabilityCheck` fails.
 
 ### Multi-tile plugins (`layout`)
 
