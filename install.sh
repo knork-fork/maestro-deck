@@ -52,7 +52,11 @@ npm install --omit=dev
 
 # 4. Install Electron in an isolated directory so it doesn't shadow its own runtime module
 ELECTRON_DIR="$HOME/.maestro-deck-electron"
-ELECTRON_BIN="$ELECTRON_DIR/node_modules/electron/dist/electron"
+if [[ "$(uname)" == "Darwin" ]]; then
+  ELECTRON_BIN="$ELECTRON_DIR/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+else
+  ELECTRON_BIN="$ELECTRON_DIR/node_modules/electron/dist/electron"
+fi
 if [ ! -f "$ELECTRON_BIN" ]; then
   echo "Installing Electron..."
   mkdir -p "$ELECTRON_DIR"
@@ -112,17 +116,24 @@ EOF
   fi
 fi
 
-# 7. PATH guidance
+# 7. PATH setup
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-  echo ""
-  echo "Add $BIN_DIR to your PATH. For example:"
   if [[ "$SHELL" == */zsh ]]; then
-    RCFILE="~/.zshrc"
+    RCFILE="$HOME/.zshrc"
   else
-    RCFILE="~/.bashrc"
+    RCFILE="$HOME/.bashrc"
   fi
-  echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> $RCFILE && source $RCFILE"
+  EXPORT_LINE="export PATH=\"\$HOME/.local/bin:\$PATH\""
+  if ! grep -qF "$BIN_DIR" "$RCFILE" 2>/dev/null; then
+    echo "" >> "$RCFILE"
+    echo "# maestro-deck" >> "$RCFILE"
+    echo "$EXPORT_LINE" >> "$RCFILE"
+    echo ""
+    echo "Added $BIN_DIR to PATH in $RCFILE."
+  fi
+  echo "Run the following to use maestro-deck in this session:"
+  echo "  source $RCFILE"
+else
+  echo ""
+  echo "Done. Run 'maestro-deck' to get started."
 fi
-
-echo ""
-echo "Done. Run 'maestro-deck' to get started."

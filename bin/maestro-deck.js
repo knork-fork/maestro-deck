@@ -81,7 +81,9 @@ async function main() {
       // Electron lives in its own isolated dir so node_modules/electron
       // never shadows the runtime built-in inside electron-main.cjs.
       const electronDir = join(homedir(), '.maestro-deck-electron');
-      const electronBin = join(electronDir, 'node_modules', 'electron', 'dist', 'electron');
+      const electronBin = process.platform === 'darwin'
+        ? join(electronDir, 'node_modules', 'electron', 'dist', 'Electron.app', 'Contents', 'MacOS', 'Electron')
+        : join(electronDir, 'node_modules', 'electron', 'dist', 'electron');
       if (!existsSync(electronBin)) {
         console.error(`Error: Electron not found at ${electronBin}. Re-run the installer.`);
         process.exit(1);
