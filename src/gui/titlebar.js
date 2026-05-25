@@ -176,8 +176,8 @@ const MENUS = [
   {
     label: 'Edit',
     items: [
-      { label: 'Undo' },
-      { label: 'Redo' },
+      { label: 'Undo', disabled: true },
+      { label: 'Redo', disabled: true },
     ],
   },
   {
@@ -189,10 +189,10 @@ const MENUS = [
   {
     label: 'Help',
     items: [
-      { label: 'Show Release Notes' },
-      { label: 'Download Update' },
+      { label: 'Show Release Notes', disabled: true },
+      { label: 'Download Update', disabled: true },
       { sep: true },
-      { label: 'About' },
+      { label: 'About', disabled: true },
     ],
   },
 ];
