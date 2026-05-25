@@ -201,7 +201,7 @@ export async function mount(container, api) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
     }
-  });
+  }, true);
   wrap.addEventListener('drop', e => {
     dragCount = 0;
     wrap.classList.remove('drag-over');
@@ -210,7 +210,7 @@ export async function mount(container, api) {
     const text = e.dataTransfer.getData('text/plain');
     if (text && connected) ws.send(JSON.stringify({ type: 'input', data: text }));
     term.focus();
-  });
+  }, true);
 
   // Focus xterm when user clicks anywhere inside the wrapper.
   wrap.addEventListener('mousedown', e => {

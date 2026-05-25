@@ -1,3 +1,5 @@
+let dragSourceTextarea = null;
+
 export async function mount(container, api) {
   const ta = container.querySelector('textarea');
 
@@ -24,6 +26,7 @@ export async function mount(container, api) {
   ta.addEventListener('dragstart', e => {
     const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd);
     if (!sel) { e.preventDefault(); return; }
+    dragSourceTextarea = ta;
     e.dataTransfer.setData('application/x-maestro-text', '1');
     e.dataTransfer.effectAllowed = 'copy';
 
@@ -43,26 +46,29 @@ export async function mount(container, api) {
     e.dataTransfer.setDragImage(ghost, 0, 16);
     setTimeout(() => ghost.remove(), 0);
   });
+  ta.addEventListener('dragend', () => { dragSourceTextarea = null; });
 
-  // Drop target: accept drags from other notepad tiles.
+  // Drop target: accept drags from other notepad tiles (not self).
   ta.addEventListener('dragenter', e => {
-    if (e.dataTransfer.types.includes('application/x-maestro-text'))
+    if (dragSourceTextarea !== ta && e.dataTransfer.types.includes('application/x-maestro-text'))
       ta.classList.add('drag-over');
   });
   ta.addEventListener('dragleave', () => ta.classList.remove('drag-over'));
   ta.addEventListener('dragover', e => {
-    if (e.dataTransfer.types.includes('application/x-maestro-text')) {
+    if (dragSourceTextarea !== ta && e.dataTransfer.types.includes('application/x-maestro-text')) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
     }
   });
   ta.addEventListener('drop', e => {
     ta.classList.remove('drag-over');
-    if (!e.dataTransfer.types.includes('application/x-maestro-text')) return;
+    if (dragSourceTextarea === ta || !e.dataTransfer.types.includes('application/x-maestro-text')) return;
     e.preventDefault();
     const text = e.dataTransfer.getData('text/plain');
     if (!text) return;
-    ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end');
+    const sep = ta.value.length > 0 && !ta.value.endsWith('\n') ? '\n' : '';
+    const end = ta.value.length;
+    ta.setRangeText(sep + text, end, end, 'end');
     ta.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
