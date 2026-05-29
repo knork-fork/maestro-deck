@@ -54,7 +54,7 @@ const UBUNTU_THEME = {
   brightWhite:   '#ffffff',
 };
 
-export async function mount(container, api) {
+export async function mount(container, api, options = {}) {
   await loadVendor();
 
   const wrap   = container.querySelector('.terminal-wrap');
@@ -148,6 +148,7 @@ export async function mount(container, api) {
     if (msg.type === 'data') {
       term.write(msg.data);
       appendScrollback(msg.data);
+      options.onPtyData?.(msg.data);
     } else if (msg.type === 'cwd') {
       if (typeof msg.cwd === 'string' && msg.cwd && msg.cwd !== lastCwd) {
         lastCwd = msg.cwd;
@@ -156,6 +157,7 @@ export async function mount(container, api) {
     } else if (msg.type === 'exit') {
       term.write(`\r\n\x1b[2m── shell exited (code ${msg.code ?? '?'}) ──\x1b[0m\r\n`);
       connected = false;
+      options.onExit?.(msg.code ?? null);
     } else if (msg.type === 'error') {
       term.write(`\r\n\x1b[31m${msg.message || 'terminal error'}\x1b[0m\r\n`);
     }

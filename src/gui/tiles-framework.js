@@ -111,6 +111,15 @@ function injectStyles() {
       cursor: move;
       user-select: none;
     }
+    .tile-titlebar-extra {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      pointer-events: none;
+    }
     .tile-close {
       width: 16px;
       height: 14px;
@@ -762,31 +771,36 @@ function renderPluginList(filter) {
 
 function buildTileListItem(tile) {
   const el = document.createElement('div');
-  el.className = 'sb-tile-item';
-  el.draggable = true;
+  el.className = 'sb-tile-item' + (tile.disabled ? ' disabled' : '');
+  el.draggable = !tile.disabled;
   el.dataset.tileName = tile.name;
-  el.title = tile.description;
+  el.title = tile.disabled
+    ? (tile.disabledReason ? `${tile.disabledReason} — ${tile.description}` : tile.description)
+    : tile.description;
 
   const iconEl = document.createElement('span');
   iconEl.className = 'sb-tile-icon';
   iconEl.innerHTML = tile.icon;
 
+  const descText = tile.disabled && tile.disabledReason ? tile.disabledReason : tile.description;
   const infoEl = document.createElement('div');
   infoEl.className = 'sb-tile-info';
   infoEl.innerHTML = `
     <div class="sb-tile-label">${escapeHtml(tile.label)}</div>
-    <div class="sb-tile-desc">${escapeHtml(tile.description)}</div>
+    <div class="sb-tile-desc">${escapeHtml(descText)}</div>
   `;
 
   el.appendChild(iconEl);
   el.appendChild(infoEl);
 
-  el.addEventListener('dragstart', e => {
-    e.dataTransfer.setData('tile-name', tile.name);
-    e.dataTransfer.effectAllowed = 'copy';
-    shieldWebviews();
-  });
-  el.addEventListener('dragend', () => unshieldWebviews());
+  if (!tile.disabled) {
+    el.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('tile-name', tile.name);
+      e.dataTransfer.effectAllowed = 'copy';
+      shieldWebviews();
+    });
+    el.addEventListener('dragend', () => unshieldWebviews());
+  }
 
   return el;
 }
@@ -1435,6 +1449,9 @@ function buildTileElement(leafNode) {
   const titlebar = document.createElement('div');
   titlebar.className = 'tile-titlebar';
 
+  const titlebarExtra = document.createElement('div');
+  titlebarExtra.className = 'tile-titlebar-extra';
+
   const expandBtn = document.createElement('button');
   expandBtn.className = 'tile-expand';
   expandBtn.title = 'Expand';
@@ -1445,6 +1462,7 @@ function buildTileElement(leafNode) {
   closeBtn.title = 'Close';
   closeBtn.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
 
+  titlebar.appendChild(titlebarExtra);
   titlebar.appendChild(expandBtn);
   titlebar.appendChild(closeBtn);
 
@@ -2304,6 +2322,12 @@ function applyContextSelectAll(tileEl) {
 
 async function showContextMenu(x, y, tileEl) {
   closeContextMenu();
+
+  // Ask the tile for extra context menu items
+  const ctxItemsEv = new CustomEvent('md-get-ctx-items', { detail: { items: [] }, bubbles: false });
+  tileContentEl(tileEl)?.dispatchEvent(ctxItemsEv);
+  const extraItems = ctxItemsEv.detail.items;
+
   const sel = getContextSelection(tileEl);
   let clipboardText = '';
   try { clipboardText = await navigator.clipboard.readText(); } catch { /* permission denied */ }
@@ -2334,6 +2358,23 @@ async function showContextMenu(x, y, tileEl) {
       <span>Select All</span><span class="md-ctx-shortcut">Ctrl+A</span>
     </div>
   `;
+
+  if (extraItems.length > 0) {
+    const sep = document.createElement('div');
+    sep.className = 'md-ctx-sep';
+    menu.appendChild(sep);
+    for (const item of extraItems) {
+      const div = document.createElement('div');
+      div.className = 'md-ctx-item';
+      div.dataset.act = '__custom__';
+      const span = document.createElement('span');
+      span.textContent = item.label;
+      div.appendChild(span);
+      div._customAction = item.action;
+      menu.appendChild(div);
+    }
+  }
+
   document.body.appendChild(menu);
 
   const r = menu.getBoundingClientRect();
@@ -2347,7 +2388,9 @@ async function showContextMenu(x, y, tileEl) {
     if (!item || item.classList.contains('disabled')) return;
     const act = item.dataset.act;
     closeContextMenu();
-    if (act === 'copy' && sel.text) {
+    if (act === '__custom__') {
+      item._customAction?.();
+    } else if (act === 'copy' && sel.text) {
       try { await navigator.clipboard.writeText(sel.text); } catch {}
       sel.onCopied?.();
     } else if (act === 'cut' && sel.text) {

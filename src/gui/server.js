@@ -111,7 +111,23 @@ function loadTiles() {
       }
 
       const hasJs = existsSync(join(tileDir, 'tile.js'));
-      map.set(name, { dir: tileDir, source, manifest, hasJs });
+
+      let disabled = false;
+      let disabledReason = null;
+      if (typeof manifest.availabilityCheck === 'string' && manifest.availabilityCheck) {
+        try {
+          const r = spawnSync('bash', ['-lc', manifest.availabilityCheck], { encoding: 'utf8', timeout: 5000 });
+          if (r.status !== 0 || !(r.stdout && r.stdout.trim())) {
+            disabled = true;
+            disabledReason = manifest.disabledReason || 'Requirement check failed';
+          }
+        } catch {
+          disabled = true;
+          disabledReason = manifest.disabledReason || 'Requirement check failed';
+        }
+      }
+
+      map.set(name, { dir: tileDir, source, manifest, hasJs, disabled, disabledReason });
     }
   }
 
@@ -556,11 +572,13 @@ export async function startServer() {
       } else if (url.pathname === '/api/tiles' && req.method === 'GET') {
         json([...tiles.entries()].map(([name, t]) => ({
           name,
-          label:       t.manifest.label,
-          description: t.manifest.description,
-          icon:        t.manifest.icon,
-          source:      t.source,
-          hasJs:       t.hasJs,
+          label:          t.manifest.label,
+          description:    t.manifest.description,
+          icon:           t.manifest.icon,
+          source:         t.source,
+          hasJs:          t.hasJs,
+          disabled:       t.disabled,
+          disabledReason: t.disabledReason,
         })));
 
       } else if (url.pathname === '/api/plugins' && req.method === 'GET') {
@@ -686,6 +704,29 @@ export async function startServer() {
         const f = join(getProjectDir(p), `tile-${id}.json`);
         if (existsSync(f)) unlinkSync(f);
         json({ ok: true });
+
+      } else if (url.pathname === '/api/maestro/resume-list' && req.method === 'GET') {
+        const workspacePath = url.searchParams.get('path');
+        if (!workspacePath) { json({ error: 'path required' }, 400); return; }
+        const r = spawnSync('bash', ['-lc', 'maestro resume-list-only'], {
+          encoding: 'utf8', timeout: 5000,
+          cwd: existsSync(workspacePath) ? workspacePath : undefined,
+        });
+        if (r.status !== 0 || r.error) { json({ tickets: [] }); return; }
+        // Output lines: "N. ticketId" or "N. Summary  (ticketId)"
+        const tickets = [];
+        for (const raw of (r.stdout ?? '').split('\n')) {
+          const line = raw.trim();
+          if (!line) continue;
+          const withSummary = line.match(/^\d+\.\s+(.+?)\s{2,}\(([^)]+)\)$/);
+          if (withSummary) {
+            tickets.push({ id: withSummary[2], summary: withSummary[1].trim() });
+          } else {
+            const idOnly = line.match(/^\d+\.\s+(\S+)$/);
+            if (idOnly) tickets.push({ id: idOnly[1], summary: '' });
+          }
+        }
+        json({ tickets });
 
       } else {
         res.writeHead(404);
